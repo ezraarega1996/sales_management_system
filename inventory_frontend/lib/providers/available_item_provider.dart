@@ -73,17 +73,26 @@ class AvailableItemProvider with ChangeNotifier {
   /// A queued sale reached the server: make the deduction permanent locally right away, then
   /// refresh from the server shortly after to pick up the authoritative numbers.
   void _onSaleSynced(SyncedSale synced) {
-    final id = synced.sale.availableItemId;
-    final index = _serverItems.indexWhere((i) => i.id == id);
-    if (index != -1) {
+    var changed = false;
+    synced.sale.stockUnits.forEach((id, units) {
+      final index = _serverItems.indexWhere((i) => i.id == id);
+      if (index == -1) return;
       final item = _serverItems[index];
-      _serverItems[index] = item.withQuantity(math.max(0, item.quantity - synced.sale.units));
+      _serverItems[index] = item.withQuantity(math.max(0, item.quantity - units));
+      changed = true;
+    });
+    if (changed) {
       final endpoint = _endpoint;
       if (endpoint != null) {
         LocalCache.write(endpoint, _serverItems.map((i) => i.toJson()).toList());
       }
       notifyListeners();
     }
+    refreshSoon();
+  }
+
+  /// Refreshes stock from the server shortly (debounced), e.g. after a sync or an undo.
+  void refreshSoon() {
     _refreshDebounce?.cancel();
     _refreshDebounce = Timer(const Duration(seconds: 2), () {
       if (_endpoint != null && _outbox.pending.isEmpty) {

@@ -124,16 +124,23 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       builder: (context, businessProvider, child) {
         final business = businessProvider.currentBusiness;
 
-        return Scaffold(
-          appBar: AppBar(
-            // The dashboard header already shows the business name
-            title: Text(
-              _selectedIndex == 0 ? AppLocalizations.of(context)!.dashboard : business?.name ?? 'Owner Dashboard',
+        // Back on another tab returns to the dashboard instead of closing the app (and losing a basket)
+        return PopScope(
+          canPop: _selectedIndex == 0,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) setState(() => _selectedIndex = 0);
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              // The dashboard header already shows the business name
+              title: Text(
+                _selectedIndex == 0 ? AppLocalizations.of(context)!.dashboard : business?.name ?? 'Owner Dashboard',
+              ),
+              actions: const [LanguageSelector()],
             ),
-            actions: const [LanguageSelector()],
+            drawer: _buildDrawer(),
+            body: _getScreen(),
           ),
-          drawer: _buildDrawer(),
-          body: _getScreen(),
         );
       },
     );

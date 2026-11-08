@@ -4,6 +4,7 @@ import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:inventory_frontend/providers/auth_provider.dart';
 import 'package:inventory_frontend/providers/available_item_provider.dart';
+import 'package:inventory_frontend/providers/basket_provider.dart';
 import 'package:inventory_frontend/providers/bought_provider.dart';
 import 'package:inventory_frontend/providers/business_provider.dart';
 import 'package:inventory_frontend/providers/category_provider.dart';
@@ -55,6 +56,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => BoughtProvider()),
         ChangeNotifierProvider(create: (_) => AvailableItemProvider()),
         ChangeNotifierProvider(create: (_) => ShopProvider()),
+        ChangeNotifierProvider(create: (_) => BasketProvider()),
       ],
       child: const MyApp(),
     ),

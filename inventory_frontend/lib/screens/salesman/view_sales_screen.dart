@@ -76,13 +76,62 @@ class _ViewSalesScreenState extends State<ViewSalesScreen> {
                           padding: const EdgeInsets.only(top: 96),
                           child: Center(child: Text(loadFailed ? l10n.loadFailedNoData : l10n.noSalesFound)),
                         ),
-                      for (final sale in sales) _buildSaleCard(sale, l10n),
+                      for (final group in _groupByReceipt(sales))
+                        group.first.receiptId == null
+                            ? _buildSaleCard(group.first, l10n)
+                            : _buildReceiptCard(group, l10n),
                     ],
                   ),
                 );
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Lines of one basket share a receiptId and are shown as one receipt; older sales stay single.
+  List<List<SoldItem>> _groupByReceipt(List<SoldItem> sales) {
+    final groups = <String, List<SoldItem>>{};
+    final ordered = <List<SoldItem>>[];
+    for (final sale in sales) {
+      final receiptId = sale.receiptId;
+      if (receiptId == null) {
+        ordered.add([sale]);
+      } else if (groups.containsKey(receiptId)) {
+        groups[receiptId]!.add(sale);
+      } else {
+        ordered.add(groups[receiptId] = [sale]);
+      }
+    }
+    return ordered;
+  }
+
+  Widget _buildReceiptCard(List<SoldItem> lines, AppLocalizations l10n) {
+    final total = lines.fold(0.0, (sum, s) => sum + s.soldPrice);
+    final qty = NumberFormat('#,##0.##');
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        leading: const Icon(Icons.receipt_long_outlined),
+        title: Text('${l10n.posItemsCount(lines.length)} · ${l10n.currencySymbol} ${qty.format(total)}'),
+        subtitle: Text(
+          [
+            lines.map((s) => s.item?.name ?? l10n.unknownItem).take(3).join(', '),
+            '${_dateFormat.format(lines.first.createdAt.toLocal())} · ${lines.first.salesman?.name ?? l10n.unknownSalesman}',
+          ].join('\n'),
+        ),
+        children: [
+          for (final sale in lines)
+            ListTile(
+              dense: true,
+              title: Text(sale.item?.name ?? l10n.unknownItem),
+              subtitle: Text('${qty.format(sale.quantity)} ${sale.fraction?.name ?? ''}'),
+              trailing: Text('${l10n.currencySymbol} ${qty.format(sale.soldPrice)}'),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SaleDetailScreen(sale: sale))),
+            ),
         ],
       ),
     );
@@ -179,17 +228,16 @@ class _UnsyncedSaleTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final salesProvider = context.read<SalesProvider>();
     final failed = sale.isFailed;
-    final quantity = NumberFormat('#,##0.##').format(sale.quantity);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       color: failed ? scheme.errorContainer : scheme.secondaryContainer.withValues(alpha: 0.5),
       child: ListTile(
         leading: Icon(failed ? Icons.error_outline : Icons.schedule, color: failed ? scheme.error : null),
-        title: Text('${sale.itemName} · $quantity ${sale.fractionName}'),
+        title: Text(sale.title),
         subtitle: Text(
           [
-            l10n.amountWithCurrency(sale.amount.toStringAsFixed(2)),
+            '${l10n.posItemsCount(sale.itemCount)} · ${l10n.amountWithCurrency(sale.amount.toStringAsFixed(2))}',
             dateFormat.format(sale.createdAt),
             failed ? l10n.notRecordedReason(sale.error!) : l10n.waitingToSync,
           ].join('\n'),

@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:inventory_frontend/providers/available_item_provider.dart';
 import 'package:inventory_frontend/screens/owner/transactions_screen.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:inventory_frontend/screens/salesman/sell_item_screen.dart';
+import 'package:inventory_frontend/screens/salesman/pos_screen.dart';
 import 'package:inventory_frontend/widgets/offline_banner.dart';
 
 class AvailableItemsScreen extends StatefulWidget {
@@ -57,11 +57,7 @@ class _AvailableItemsScreenState extends State<AvailableItemsScreen> {
 
   void _onSellItem(dynamic availableItem, dynamic selectedFraction) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder:
-            (_) =>
-                SellItemScreen(preSelectedAvailableItem: availableItem, preSelectedAvailableFraction: selectedFraction),
-      ),
+      MaterialPageRoute(builder: (_) => PosScreen(initialStock: availableItem, initialFraction: selectedFraction)),
     );
   }
 

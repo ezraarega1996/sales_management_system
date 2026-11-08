@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:inventory_frontend/models/sales_data.dart';
+import 'package:inventory_frontend/providers/basket_provider.dart';
 import 'package:inventory_frontend/models/sold_item.dart';
 import 'package:inventory_frontend/services/sale_outbox.dart';
 import 'package:inventory_frontend/utils/api.dart';
@@ -91,40 +92,70 @@ class SalesProvider with ChangeNotifier {
     _todaySales = (data['todaySales'] as num?)?.toDouble();
   });
 
-  /// Records a sale offline-first: it is saved on the phone immediately and sent to the server
-  /// in the background (now, or when the connection comes back).
+  /// Records a basket offline-first: it is saved on the phone immediately and sent to the server
+  /// in the background (now, or when the connection comes back) as one receipt.
   ///
-  /// Waits up to [confirmWithin] for the server; returns true if it confirmed the sale in that
-  /// time, false if the sale is safely queued on the phone and will sync later.
-  Future<bool> createSale(
-    Map<String, dynamic> saleData, {
-    required String availableItemId,
-    required double units,
-    required String itemName,
-    required String fractionName,
+  /// Waits up to [confirmWithin] for the server and returns the queued sale plus whether the
+  /// server already confirmed it (false = safely saved on the phone, will sync later).
+  Future<({PendingSale sale, bool confirmed})> checkout(
+    List<BasketLine> lines, {
     Duration confirmWithin = const Duration(seconds: 3),
   }) async {
-    final sale = await _outbox.enqueue(
-      payload: saleData,
-      availableItemId: availableItemId,
-      units: units,
-      itemName: itemName,
-      fractionName: fractionName,
+    final stockUnits = <String, double>{};
+    for (final line in lines) {
+      stockUnits[line.stock.id] = (stockUnits[line.stock.id] ?? 0) + line.units;
+    }
+    final names = lines.map((l) => '${l.itemName} ×${_qty(l.quantity)}').toList();
+    final title = names.length <= 3 ? names.join(', ') : '${names.take(3).join(', ')} +${names.length - 3}';
+
+    final sale = await _outbox.enqueueBasket(
+      shopId: lines.first.stock.shopId,
+      lines: [
+        for (final l in lines)
+          {
+            'itemId': l.stock.itemId,
+            'fractionId': l.fraction.id,
+            'quantity': l.quantity,
+            'amount': l.amount,
+            'profit': l.profit,
+          },
+      ],
+      stockUnits: stockUnits,
+      title: title,
     );
     await _outbox.sync().timeout(confirmWithin, onTimeout: () => 0);
-    return !_outbox.pending.any((s) => s.clientId == sale.clientId);
+    return (sale: sale, confirmed: !_outbox.isPending(sale.clientId));
   }
+
+  /// Cancels a just-made sale. If it is still on the phone it is simply dropped; otherwise the
+  /// server puts the stock back (salesmen: own sales, within 10 minutes). Throws on failure.
+  Future<void> undoSale(PendingSale sale) async {
+    if (_outbox.isPending(sale.clientId)) {
+      await _outbox.discard(sale.clientId);
+      return;
+    }
+    await Api.delete('sales/receipt/${sale.clientId}');
+    _sales.removeWhere((s) => s.receiptId == sale.clientId);
+    notifyListeners();
+  }
+
+  static String _qty(double q) => q == q.roundToDouble() ? q.toInt().toString() : q.toStringAsFixed(2);
 
   Future<void> syncNow() => _outbox.sync();
   Future<void> retryUnsynced(String clientId) => _outbox.retry(clientId);
   Future<void> discardUnsynced(String clientId) => _outbox.discard(clientId);
 
   void _onSaleSynced(SyncedSale synced) {
-    if (synced.serverSale is! Map<String, dynamic>) return;
-    final sale = SoldItem.fromJson(synced.serverSale as Map<String, dynamic>);
-    if (_sales.any((s) => s.id == sale.id)) return;
-    _sales.insert(0, sale);
-    notifyListeners();
+    final response = synced.serverResponse;
+    final created = response is List ? response : [response];
+    var changed = false;
+    for (final json in created.whereType<Map<String, dynamic>>()) {
+      final sale = SoldItem.fromJson(json);
+      if (_sales.any((s) => s.id == sale.id)) continue;
+      _sales.insert(0, sale);
+      changed = true;
+    }
+    if (changed) notifyListeners();
   }
 
   Future<bool> deleteSale(String id) async {

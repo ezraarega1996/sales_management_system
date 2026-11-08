@@ -7,20 +7,21 @@ import 'package:uuid/uuid.dart';
 
 import 'package:inventory_frontend/utils/api.dart';
 
-/// A sale recorded on the phone that has not been confirmed by the server yet.
+/// A sale (one basket / receipt) recorded on the phone that the server has not confirmed yet.
 class PendingSale {
   final String clientId;
 
-  /// Body for `POST /sales` (includes `clientId` and `soldTime`).
+  /// Body sent to the server. Baskets: `{shopId, lines: [...], clientId, soldTime}` for
+  /// `POST /sales/batch`. Older single-item entries (no `lines`) go to `POST /sales`.
   final Map<String, dynamic> payload;
 
-  /// Stock row the sale takes from, and how many base units, so stock can be shown
+  /// Base units taken from each stock row (availableItemId -> units), so stock can be shown
   /// correctly before the server confirms the sale.
-  final String? availableItemId;
-  final double units;
+  final Map<String, double> stockUnits;
 
-  final String itemName;
-  final String fractionName;
+  /// Short description for lists, e.g. "Coca-Cola ×3, Sugar ×2".
+  final String title;
+  final int itemCount;
   final DateTime createdAt;
 
   /// Set when the server permanently rejected the sale (e.g. not enough stock).
@@ -29,25 +30,28 @@ class PendingSale {
   const PendingSale({
     required this.clientId,
     required this.payload,
-    required this.availableItemId,
-    required this.units,
-    required this.itemName,
-    required this.fractionName,
+    required this.stockUnits,
+    required this.title,
+    required this.itemCount,
     required this.createdAt,
     this.error,
   });
 
   bool get isFailed => error != null;
-  double get amount => (payload['amount'] as num?)?.toDouble() ?? 0;
-  double get quantity => (payload['quantity'] as num?)?.toDouble() ?? 0;
+  bool get isBasket => payload['lines'] is List;
+  String get endpoint => isBasket ? 'sales/batch' : 'sales';
+
+  double get amount =>
+      isBasket
+          ? (payload['lines'] as List).fold(0.0, (sum, l) => sum + ((l as Map)['amount'] as num).toDouble())
+          : (payload['amount'] as num?)?.toDouble() ?? 0;
 
   PendingSale withError(String? error) => PendingSale(
     clientId: clientId,
     payload: payload,
-    availableItemId: availableItemId,
-    units: units,
-    itemName: itemName,
-    fractionName: fractionName,
+    stockUnits: stockUnits,
+    title: title,
+    itemCount: itemCount,
     createdAt: createdAt,
     error: error,
   );
@@ -55,24 +59,31 @@ class PendingSale {
   Map<String, dynamic> toJson() => {
     'clientId': clientId,
     'payload': payload,
-    'availableItemId': availableItemId,
-    'units': units,
-    'itemName': itemName,
-    'fractionName': fractionName,
+    'stockUnits': stockUnits,
+    'title': title,
+    'itemCount': itemCount,
     'createdAt': createdAt.toIso8601String(),
     'error': error,
   };
 
-  factory PendingSale.fromJson(Map<String, dynamic> json) => PendingSale(
-    clientId: json['clientId'] as String,
-    payload: Map<String, dynamic>.from(json['payload'] as Map),
-    availableItemId: json['availableItemId'] as String?,
-    units: (json['units'] as num).toDouble(),
-    itemName: json['itemName'] as String? ?? '',
-    fractionName: json['fractionName'] as String? ?? '',
-    createdAt: DateTime.parse(json['createdAt'] as String),
-    error: json['error'] as String?,
-  );
+  factory PendingSale.fromJson(Map<String, dynamic> json) {
+    // Entries saved by the previous app version stored one stock row and an item/unit name
+    final stockUnits =
+        json['stockUnits'] != null
+            ? (json['stockUnits'] as Map).map((k, v) => MapEntry(k as String, (v as num).toDouble()))
+            : {
+              if (json['availableItemId'] != null) json['availableItemId'] as String: (json['units'] as num).toDouble(),
+            };
+    return PendingSale(
+      clientId: json['clientId'] as String,
+      payload: Map<String, dynamic>.from(json['payload'] as Map),
+      stockUnits: stockUnits,
+      title: json['title'] as String? ?? '${json['itemName'] ?? ''} ${json['fractionName'] ?? ''}'.trim(),
+      itemCount: (json['itemCount'] as num?)?.toInt() ?? 1,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      error: json['error'] as String?,
+    );
+  }
 }
 
 /// Where the queue is persisted. Swappable for tests.
@@ -92,14 +103,16 @@ class PrefsOutboxStore implements OutboxStore {
       (await SharedPreferences.getInstance()).setString(_key(userId), value);
 }
 
-/// Sends one sale to the server and returns the created sale JSON.
-typedef SaleSender = Future<dynamic> Function(Map<String, dynamic> payload);
+/// Sends one queued sale to [endpoint] and returns the server's response.
+typedef SaleSender = Future<dynamic> Function(String endpoint, Map<String, dynamic> payload);
 
 /// Emitted when a queued sale has been accepted by the server.
 class SyncedSale {
   final PendingSale sale;
-  final dynamic serverSale;
-  const SyncedSale(this.sale, this.serverSale);
+
+  /// Created sale lines: a list for baskets, a single map for older single-item entries.
+  final dynamic serverResponse;
+  const SyncedSale(this.sale, this.serverResponse);
 }
 
 /// Offline-first queue for sales.
@@ -110,7 +123,7 @@ class SyncedSale {
 /// user instead of being retried forever.
 class SaleOutbox extends ChangeNotifier {
   SaleOutbox({SaleSender? sender, OutboxStore? store, this.retryInterval = const Duration(seconds: 30)})
-    : _sender = sender ?? ((payload) => Api.post('sales', payload)),
+    : _sender = sender ?? ((endpoint, payload) => Api.post(endpoint, payload)),
       _store = store ?? PrefsOutboxStore();
 
   static final SaleOutbox instance = SaleOutbox();
@@ -135,11 +148,12 @@ class SaleOutbox extends ChangeNotifier {
 
   /// Base units of [availableItemId] sold on the phone but not yet confirmed by the server.
   double pendingUnitsFor(String availableItemId) =>
-      pending.where((s) => s.availableItemId == availableItemId).fold(0.0, (sum, s) => sum + s.units);
+      pending.fold(0.0, (sum, s) => sum + (s.stockUnits[availableItemId] ?? 0));
 
   /// Loads the queue of the logged-in user (each user has their own queue).
   Future<void> switchUser(String? userId) async {
     _timer?.cancel();
+    _timer = null;
     _userId = userId;
     _items = [];
     if (userId != null) {
@@ -156,24 +170,22 @@ class SaleOutbox extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Saves a sale on the phone. Call [sync] afterwards to send it.
-  Future<PendingSale> enqueue({
-    required Map<String, dynamic> payload,
-    required String? availableItemId,
-    required double units,
-    required String itemName,
-    required String fractionName,
+  /// Saves a basket on the phone. Call [sync] afterwards to send it.
+  Future<PendingSale> enqueueBasket({
+    required String shopId,
+    required List<Map<String, dynamic>> lines,
+    required Map<String, double> stockUnits,
+    required String title,
     DateTime? now,
   }) async {
     final soldAt = now ?? DateTime.now();
     final clientId = const Uuid().v4();
     final sale = PendingSale(
       clientId: clientId,
-      payload: {...payload, 'clientId': clientId, 'soldTime': soldAt.toUtc().toIso8601String()},
-      availableItemId: availableItemId,
-      units: units,
-      itemName: itemName,
-      fractionName: fractionName,
+      payload: {'shopId': shopId, 'lines': lines, 'clientId': clientId, 'soldTime': soldAt.toUtc().toIso8601String()},
+      stockUnits: stockUnits,
+      title: title,
+      itemCount: lines.length,
       createdAt: soldAt,
     );
     _items.add(sale);
@@ -182,6 +194,9 @@ class SaleOutbox extends ChangeNotifier {
     notifyListeners();
     return sale;
   }
+
+  /// Whether [clientId] is still waiting on the phone (not yet confirmed by the server).
+  bool isPending(String clientId) => _items.any((s) => s.clientId == clientId && !s.isFailed);
 
   /// Sends waiting sales oldest-first. Stops at the first network problem (to retry later).
   /// Returns how many sales the server accepted.
@@ -193,11 +208,11 @@ class SaleOutbox extends ChangeNotifier {
     try {
       for (final sale in pending) {
         try {
-          final serverSale = await _sender(sale.payload);
+          final response = await _sender(sale.endpoint, sale.payload);
           _items.removeWhere((s) => s.clientId == sale.clientId);
           sent++;
           await _persist();
-          _synced.add(SyncedSale(sale, serverSale));
+          _synced.add(SyncedSale(sale, response));
           notifyListeners();
         } on ApiException catch (e) {
           // 401 = session expired: keep the sale and retry after the user logs in again
@@ -227,7 +242,7 @@ class SaleOutbox extends ChangeNotifier {
     await sync();
   }
 
-  /// Drops a failed sale (e.g. it was a mistake and the server rejected it).
+  /// Drops a sale that is still on the phone (a failed one, or one just undone before syncing).
   Future<void> discard(String clientId) async {
     _items.removeWhere((s) => s.clientId == clientId);
     await _persist();

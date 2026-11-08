@@ -5,7 +5,7 @@ import 'package:inventory_frontend/models/fraction.dart';
 import 'package:inventory_frontend/providers/available_item_provider.dart';
 import 'package:inventory_frontend/providers/sales_provider.dart';
 import 'package:inventory_frontend/screens/owner/sale_detail_screen.dart';
-import 'package:inventory_frontend/screens/salesman/sell_item_screen.dart';
+import 'package:inventory_frontend/screens/salesman/pos_screen.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 
@@ -51,9 +51,10 @@ class _FilteredSalesHistoryScreenState extends State<FilteredSalesHistoryScreen>
       final availableItemProvider = context.read<AvailableItemProvider>();
       await availableItemProvider.fetchAvailableItems(shopId: widget.shopId);
 
-      final candidates = widget.shopId != null && widget.shopId!.isNotEmpty
-          ? availableItemProvider.availableItems.where((ai) => ai.shopId == widget.shopId).toList()
-          : availableItemProvider.availableItems;
+      final candidates =
+          widget.shopId != null && widget.shopId!.isNotEmpty
+              ? availableItemProvider.availableItems.where((ai) => ai.shopId == widget.shopId).toList()
+              : availableItemProvider.availableItems;
 
       final match = candidates.where((ai) => ai.itemId == widget.itemId).toList();
       if (match.isEmpty) return;
@@ -70,9 +71,10 @@ class _FilteredSalesHistoryScreenState extends State<FilteredSalesHistoryScreen>
         }
       }
 
-      fraction ??= fractions.where((f) => f.isUnit).isNotEmpty
-          ? fractions.firstWhere((f) => f.isUnit)
-          : (fractions.isNotEmpty ? fractions.first : null);
+      fraction ??=
+          fractions.where((f) => f.isUnit).isNotEmpty
+              ? fractions.firstWhere((f) => f.isUnit)
+              : (fractions.isNotEmpty ? fractions.first : null);
 
       if (!mounted) return;
       setState(() {
@@ -88,19 +90,12 @@ class _FilteredSalesHistoryScreenState extends State<FilteredSalesHistoryScreen>
     final l10n = AppLocalizations.of(context)!;
 
     if (_sellAvailableItem == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.noItemsFound)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.noItemsFound)));
       return;
     }
 
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SellItemScreen(
-          preSelectedAvailableItem: _sellAvailableItem,
-          preSelectedAvailableFraction: _sellFraction,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => PosScreen(initialStock: _sellAvailableItem, initialFraction: _sellFraction)),
     );
   }
 
@@ -121,11 +116,7 @@ class _FilteredSalesHistoryScreenState extends State<FilteredSalesHistoryScreen>
 
   void _viewSaleDetails(int index, List sales) {
     final sale = sales[index];
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SaleDetailScreen(sale: sale),
-      ),
-    );
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => SaleDetailScreen(sale: sale)));
   }
 
   @override
@@ -136,116 +127,105 @@ class _FilteredSalesHistoryScreenState extends State<FilteredSalesHistoryScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${l10n.sales} (${DateFormat('yyyy-MM-dd').format(widget.start)} - ${DateFormat('yyyy-MM-dd').format(widget.end)})'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _isLoading ? null : _loadSales,
-          ),
-        ],
+        title: Text(
+          '${l10n.sales} (${DateFormat('yyyy-MM-dd').format(widget.start)} - ${DateFormat('yyyy-MM-dd').format(widget.end)})',
+        ),
+        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _isLoading ? null : _loadSales)],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _onSellPressed,
-        child: const Icon(Icons.add),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Consumer<SalesProvider>(
-              builder: (context, salesProvider, child) {
-                final filtered = salesProvider.sales.where((s) {
-                  if (s.itemId != widget.itemId) return false;
-                  if (widget.fractionId != null && s.fractionId != widget.fractionId) return false;
-                  if (s.createdAt.isBefore(widget.start)) return false;
-                  if (s.createdAt.isAfter(endInclusive)) return false;
-                  return true;
-                }).toList();
+      floatingActionButton: FloatingActionButton(onPressed: _onSellPressed, child: const Icon(Icons.add)),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Consumer<SalesProvider>(
+                builder: (context, salesProvider, child) {
+                  final filtered =
+                      salesProvider.sales.where((s) {
+                        if (s.itemId != widget.itemId) return false;
+                        if (widget.fractionId != null && s.fractionId != widget.fractionId) return false;
+                        if (s.createdAt.isBefore(widget.start)) return false;
+                        if (s.createdAt.isAfter(endInclusive)) return false;
+                        return true;
+                      }).toList();
 
-                if (filtered.isEmpty) {
-                  return Center(child: Text(l10n.noSalesFound));
-                }
+                  if (filtered.isEmpty) {
+                    return Center(child: Text(l10n.noSalesFound));
+                  }
 
-                return RefreshIndicator(
-                  onRefresh: _loadSales,
-                  child: ListView.builder(
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final sale = filtered[index];
-                      final itemFractions = sale.item?.fractions ?? <Fraction>[];
-                      final selectedFractionId = _selectedFractionIds[sale.id] ?? sale.fractionId;
-                      final selectedFraction = itemFractions.isNotEmpty
-                          ? itemFractions.firstWhere(
-                              (f) => f.id == selectedFractionId,
-                              orElse: () => itemFractions.first,
-                            )
-                          : Fraction(
-                              id: '',
-                              name: '',
-                              ratio: 1,
-                              sellingPrice: 0,
-                              purchasePrice: 0,
-                              itemId: '',
-                            );
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: ListTile(
-                          title: Text(sale.item?.name ?? l10n.unknownItem),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('${sale.item?.name} (${sale.salesman?.name ?? l10n.unknownSalesman})'),
-                              Text(
-                                l10n.quantityWithUnit(
-                                  (sale.quantity * (sale.fraction?.ratio ?? selectedFraction.ratio) / selectedFraction.ratio).toString(),
-                                  selectedFraction.name,
-                                ),
-                              ),
-                              Text(
-                                l10n.amountWithCurrency(
-                                  (sale.quantity * selectedFraction.sellingPrice).toStringAsFixed(2),
-                                ),
-                              ),
-                              if (sale.profit != null)
-                                Text(
-                                  'Profit: ${l10n.currencySymbol}${sale.profit!.toStringAsFixed(2)}',
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                              Text(
-                                l10n.dateWithFormat(
-                                  dateFormat.format(sale.createdAt),
-                                ),
-                              ),
-                            ],
-                          ),
-                          trailing: itemFractions.isNotEmpty
-                              ? DropdownButton<String>(
-                                  value: selectedFractionId,
-                                  items: itemFractions.map((fraction) {
-                                    return DropdownMenuItem<String>(
-                                      value: fraction.id,
-                                      child: Text(fraction.name),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      if (value != null) {
-                                        _selectedFractionIds[sale.id] = value;
-                                      }
-                                    });
-                                  },
+                  return RefreshIndicator(
+                    onRefresh: _loadSales,
+                    child: ListView.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final sale = filtered[index];
+                        final itemFractions = sale.item?.fractions ?? <Fraction>[];
+                        final selectedFractionId = _selectedFractionIds[sale.id] ?? sale.fractionId;
+                        final selectedFraction =
+                            itemFractions.isNotEmpty
+                                ? itemFractions.firstWhere(
+                                  (f) => f.id == selectedFractionId,
+                                  orElse: () => itemFractions.first,
                                 )
-                              : null,
-                          onTap: () => _viewSaleDetails(index, filtered),
-                          isThreeLine: true,
-                        ),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
+                                : Fraction(id: '', name: '', ratio: 1, sellingPrice: 0, purchasePrice: 0, itemId: '');
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: ListTile(
+                            title: Text(sale.item?.name ?? l10n.unknownItem),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${sale.item?.name} (${sale.salesman?.name ?? l10n.unknownSalesman})'),
+                                Text(
+                                  l10n.quantityWithUnit(
+                                    (sale.quantity *
+                                            (sale.fraction?.ratio ?? selectedFraction.ratio) /
+                                            selectedFraction.ratio)
+                                        .toString(),
+                                    selectedFraction.name,
+                                  ),
+                                ),
+                                Text(
+                                  l10n.amountWithCurrency(
+                                    (sale.quantity * selectedFraction.sellingPrice).toStringAsFixed(2),
+                                  ),
+                                ),
+                                if (sale.profit != null)
+                                  Text(
+                                    'Profit: ${l10n.currencySymbol}${sale.profit!.toStringAsFixed(2)}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                Text(l10n.dateWithFormat(dateFormat.format(sale.createdAt))),
+                              ],
+                            ),
+                            trailing:
+                                itemFractions.isNotEmpty
+                                    ? DropdownButton<String>(
+                                      value: selectedFractionId,
+                                      items:
+                                          itemFractions.map((fraction) {
+                                            return DropdownMenuItem<String>(
+                                              value: fraction.id,
+                                              child: Text(fraction.name),
+                                            );
+                                          }).toList(),
+                                      onChanged: (value) {
+                                        setState(() {
+                                          if (value != null) {
+                                            _selectedFractionIds[sale.id] = value;
+                                          }
+                                        });
+                                      },
+                                    )
+                                    : null,
+                            onTap: () => _viewSaleDetails(index, filtered),
+                            isThreeLine: true,
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
     );
   }
 }
-
-

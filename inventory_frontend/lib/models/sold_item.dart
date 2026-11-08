@@ -17,6 +17,9 @@ class SoldItem {
   final User? salesman;
   final double? available_items_count;
   final String? availableItemId;
+
+  /// Shared by all lines of one basket (multi-item sale); null for older single sales.
+  final String? receiptId;
   final double? profit;
 
   SoldItem({
@@ -34,6 +37,7 @@ class SoldItem {
     this.salesman,
     this.available_items_count,
     this.availableItemId,
+    this.receiptId,
     this.profit,
   });
 
@@ -61,6 +65,7 @@ class SoldItem {
       available_items_count:
           json['available_items_count'] != null ? double.tryParse(json['available_items_count'].toString()) : null,
       availableItemId: json['availableItemId'],
+      receiptId: json['receiptId'],
       profit: (json['profit'] as num?)?.toDouble(),
     );
   }
