@@ -212,7 +212,9 @@ class _SalesmanDashboardState extends State<SalesmanDashboard> {
         builder: (context, authProvider, child) {
           return Drawer(
             child: ListView(
-              padding: EdgeInsets.zero,
+              // No top padding so the header fills the status bar area, but keep the last items
+              // (Logout) above the phone's navigation bar so they can be tapped
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 8),
               children: [
                 DrawerHeader(
                   decoration: BoxDecoration(color: Theme.of(context).primaryColor),

@@ -147,7 +147,9 @@ Future<void> _loadDashboardData() async {
     final l10n = AppLocalizations.of(context)!;
     return Drawer(
       child: ListView(
-        padding: EdgeInsets.zero,
+        // No top padding so the header fills the status bar area, but keep the last items
+        // (Logout) above the phone's navigation bar so they can be tapped
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 8),
         children: [
           DrawerHeader(
             decoration: BoxDecoration(color: Colors.blue),
