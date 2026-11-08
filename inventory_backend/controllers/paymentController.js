@@ -1,5 +1,5 @@
 import { Business, Subscription } from "../models/index.js"
-import { getSubscriptionPlan } from "../config/subscriptionPlans.js"
+import { getSubscriptionPlan, subscriptionPlans } from "../config/subscriptionPlans.js"
 import Stripe from "stripe"
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
@@ -248,7 +248,6 @@ const handleSubscriptionDeleted = async (subscription) => {
 // Get subscription plans
 export const getSubscriptionPlans = async (req, res) => {
   try {
-    const { subscriptionPlans } = await import("../config/subscriptionPlans.js")
     res.json(subscriptionPlans)
   } catch (error) {
     res.status(500).json({ message: "Error fetching subscription plans", error: error.message })

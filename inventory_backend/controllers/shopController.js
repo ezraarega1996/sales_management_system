@@ -1,5 +1,4 @@
-import { Shop, User, Business, sequelize } from "../models/index.js"
-import { Op } from "sequelize"
+import { Shop, User } from "../models/index.js"
 
 // Get all shops for a business
 export const getAllShops = async (req, res) => {
@@ -23,7 +22,7 @@ export const getAllShops = async (req, res) => {
 
     res.json(shops)
   } catch (error) {
-    console.log("Error in listing shops: ", error)
+    console.error("Error in listing shops: ", error.message)
     res.status(500).json({ message: "Error fetching shops", error: error.message })
   }
 }
@@ -83,7 +82,7 @@ export const createShop = async (req, res) => {
       shop,
     })
   } catch (error) {
-    console.log("Error in creating shop: ", error)
+    console.error("Error in creating shop: ", error.message)
     res.status(500).json({ message: "Error creating shop", error: error.message })
   }
 }

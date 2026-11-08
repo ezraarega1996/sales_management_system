@@ -8,7 +8,7 @@ export const getAllCategories = async (req, res) => {
     })
     res.json(categories)
   } catch (error) {
-    console.log("errr in listing categoris: ", error)
+    console.error("errr in listing categoris: ", error.message)
     res.status(500).json({ message: "Error fetching categories", error: error.message })
   }
 }

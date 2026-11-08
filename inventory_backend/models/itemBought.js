@@ -64,6 +64,8 @@ const ItemBought = sequelize.define("ItemBought", {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
   },
+}, {
+  indexes: [{ fields: ["businessId", "createdTime"] }, { fields: ["shopId"] }, { fields: ["availableItemId"] }],
 })
 
 ItemBought.belongsTo(Item, { foreignKey: "itemId" })

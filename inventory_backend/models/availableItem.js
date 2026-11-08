@@ -1,6 +1,7 @@
 import { DataTypes } from "sequelize"
 import sequelize from "./database.js"
-import {  Item, Shop } from "./index.js"
+import Item from "./item.js"
+import Shop from "./shop.js"
 import Business from "./business.js"
 
 const AvailableItem = sequelize.define("AvailableItem", {
@@ -34,6 +35,8 @@ const AvailableItem = sequelize.define("AvailableItem", {
       key: 'id',
     },
   },
+}, {
+  indexes: [{ fields: ["businessId"] }, { fields: ["shopId", "itemId"] }],
 })
 
 // Define associations

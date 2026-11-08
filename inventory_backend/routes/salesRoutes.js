@@ -7,14 +7,12 @@ import {
   deleteSale,
   getSalesByUser,
   getDashboardStats,
-  getAvailableQuantity,
 } from "../controllers/salesController.js"
 import { authenticate, authorizeOwner } from "../middleware/auth.js"
 
 const router = express.Router()
 
 router.get("/", authenticate, getAllSales)
-router.get("/available-quantity", authenticate, getAvailableQuantity)
 router.get("/user", authenticate, getSalesByUser)
 router.get("/dashboard", authenticate, getDashboardStats)
 router.get("/:id", authenticate, getSaleById)

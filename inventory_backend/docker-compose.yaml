@@ -15,14 +15,17 @@ services:
       - db_data:/var/lib/postgresql/data
 
   node-app:
-    build: .
+    build:
+      context: .
+      args:
+        NODE_ENV: development
     container_name: node-docker-app
     ports:
       - "5000:5000"
     volumes:
       - .:/app
       - /app/node_modules
-    command: nodemon server.js
+    command: npm run dev
     environment:
       - NODE_ENV=development
       - DATABASE_URL=postgres://postgres:root@db:5432/inventory_db

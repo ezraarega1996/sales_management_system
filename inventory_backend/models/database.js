@@ -16,7 +16,8 @@ const connectWithRetry = async (retries = 10, delay = 5000) => {
     try {
       await sequelize.authenticate();
       console.log('✅ Connected to DB');
-      return syncDatabase()
+      await syncDatabase();
+      return;
     } catch (err) {
       console.error(`❌ DB connection failed. Retries left: ${retries - 1}`);
       console.error(err.message);
@@ -29,9 +30,11 @@ const connectWithRetry = async (retries = 10, delay = 5000) => {
   process.exit(1);
 };
 
+// `alter` inspects (and may rewrite) every table, which is slow and risky in production,
+// so production only creates missing tables.
 const syncDatabase = async () => {
   try {
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: process.env.NODE_ENV !== 'production' });
     console.log('✅ Database synchronized');
   } catch (error) {
     console.error('❌ Database synchronization failed:', error.message);

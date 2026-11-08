@@ -1,11 +1,9 @@
-import { User, sequelize } from "../models/index.js"
+import { User, Business } from "../models/index.js"
 import { checkSubscriptionLimits } from "../config/subscriptionPlans.js"
-import { Business } from "../models/index.js"
 import { Op } from "sequelize"
 
 
 export const getAllUsers = async (req, res) => {
-  console.log("getAllUsers called with user: ")
   try {
     // For admin, return all users
     if (req.user.role === "admin") {
@@ -23,10 +21,9 @@ export const getAllUsers = async (req, res) => {
       },
       attributes: { exclude: ["password"] },
     })
-    console.log("getAllUsers ended with user: ")
     res.json(users)
   } catch (error) {
-    console.log("errr in listing users: ", error)
+    console.error("errr in listing users: ", error.message)
     res.status(500).json({ message: "Error fetching users", error: error.message })
   }
 }

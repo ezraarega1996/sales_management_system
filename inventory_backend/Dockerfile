@@ -1,21 +1,15 @@
-# Use the official Node.js image as the base image
-FROM node:20
+FROM node:20-slim
 
-# Set the working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json
+# Production images skip devDependencies; docker-compose builds with NODE_ENV=development for nodemon
+ARG NODE_ENV=production
+ENV NODE_ENV=$NODE_ENV
+
 COPY package*.json ./
+RUN if [ "$NODE_ENV" = "production" ]; then npm ci --omit=dev; else npm ci; fi
 
-# Install dependencies
-RUN npm install
-RUN npm install -g nodemon
-
-# Copy the rest of the application source code
 COPY . .
 
-# Expose the port your server listens on (change if needed)
 EXPOSE 5000
-
-# Start the server (update the path if your entrypoint is different)
-CMD ["nodemon", "server.js"]
+CMD ["node", "server.js"]

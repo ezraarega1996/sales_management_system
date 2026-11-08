@@ -10,7 +10,7 @@ export const getAllItems = async (req, res) => {
     })
     res.json(items)
   } catch (error) {
-    console.log("errr in listing items: ", error)
+    console.error("errr in listing items: ", error.message)
     res.status(500).json({ message: "Error fetching items", error: error.message })
   }
 }
@@ -37,7 +37,7 @@ export const getItemById = async (req, res) => {
 
 export const createItem = async (req, res) => {
   try {
-    const { name, categoryId, fractions } = req.body
+    const { name, categoryId } = req.body
 
     // Check if category exists and belongs to the business
     const category = await Category.findOne({
@@ -57,26 +57,6 @@ export const createItem = async (req, res) => {
       categoryId,
       businessId: req.user.businessId,
     })
-
-    // Create fractions if providede
-    // if (fractions && Array.isArray(fractions)) {
-    //   const fractionPromises = fractions.map((fraction) => {
-    //     const sellingPrice = fraction.sellingPrice ?? fraction.price ?? 0
-    //     const purchasePrice = fraction.purchasePrice ?? 0
-    //     return Fraction.create({
-    //       name: fraction.name,
-    //       ratio: fraction.ratio,
-    //       sellingPrice,
-    //       purchasePrice,
-    //       isUnit: fraction.isUnit ?? false,
-    //       itemId: item.id,
-    //       businessId: req.user.businessId,
-    //     })
-    //   })
-    //   await Promise.all(fractionPromises)
-    // }
-
-    // Fetch the created item with its fractions
     const createdItem = await Item.findByPk(item.id, {
       include: [{ model: Category }, { model: Fraction, as: "fractions" }],
     })

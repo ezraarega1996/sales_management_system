@@ -3,7 +3,6 @@ import sequelize from "./database.js"
 import Item from "./item.js"
 import User from "./user.js"
 import Business from "./business.js"
-import Fraction from "./fraction.js"
 import AvailableItem from "./availableItem.js"
 import Shop from "./shop.js"
 
@@ -69,6 +68,19 @@ const SoldItem = sequelize.define("SoldItem", {
       key: "id",
     },
   },
+  // Generated on the phone so a sale queued offline is never recorded twice when retried
+  clientId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    unique: true,
+  },
+}, {
+  indexes: [
+    { fields: ["businessId", "soldTime"] },
+    { fields: ["salesmanId"] },
+    { fields: ["shopId"] },
+    { fields: ["itemId"] },
+  ],
 })
 
 SoldItem.belongsTo(Item, { foreignKey: "itemId" })
@@ -81,7 +93,6 @@ User.hasMany(SoldItem, { foreignKey: "salesmanId", as: "sales" })
 SoldItem.belongsTo(Business, { foreignKey: "businessId" })
 Business.hasMany(SoldItem, { foreignKey: "businessId" })
 
-//SoldItem.belongsTo(Fraction, { foreignKey: "fractionId" })
 SoldItem.belongsTo(AvailableItem, { foreignKey: "availableItemId" })
 
 // Add the reverse association
