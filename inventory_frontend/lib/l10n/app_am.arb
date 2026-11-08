@@ -1,0 +1,738 @@
+{
+    "appTitle": "ኢንቨንቶሪ አስተዳደር",
+    "availableItems": "ያሉ እቃዎች",
+    "boughtItems": "የተጨመሩ እቃዎች",
+    "soldItems": "የተሸጡ እቃዎች",
+    "transactions": "ግብይቶች",
+    "transactionsFor": "ግብይቶች - {itemName}",
+    "@transactionsFor": {
+        "placeholders": {
+            "itemName": {
+                "type": "Object"
+            }
+        }
+    },
+    "settings": "ቅንብሮች",
+    "language": "ቋንቋ",
+    "english": "እንግሊዝኛ",
+    "amharic": "አማርኛ",
+    "noItemsFound": "ምንም እቃዎች አልተገኙም",
+    "noTransactionsFound": "ምንም ግብይቶች አልተገኙም",
+    "availableQuantity": "ያለው ብዛት: {amount} {unit}",
+    "@availableQuantity": {
+        "placeholders": {
+            "amount": {
+                "type": "double"
+            },
+            "unit": {
+                "type": "String"
+            }
+        }
+    },
+    "soldPrice": "የመሸጫ ዋጋ: ${price}",
+    "@soldPrice": {
+        "placeholders": {
+            "price": {
+                "type": "double"
+            }
+        }
+    },
+    "soldPriceLabel": "የመሸጫ ዋጋ",
+    "viewTransactions": "ግብይቶችን ይመልከቱ",
+    "sellItem": "እቃ ይሽጡ",
+    "addItem": "እቃ ይጨምሩ",
+    "editItem": "እቃ ያስተካክሉ",
+    "deleteItem": "እቃ ያስወግዱ",
+    "quantity": "ብዛት",
+    "price": "ዋጋ",
+    "location": "አድራሻ",
+    "expiryDate": "የሚያልቅበት ቀን",
+    "selectExpiryDate": "የማብቂያ ቀን ይምረጡ",
+    "save": "ያስቀምጡ",
+    "cancel": "ይሰርዙ",
+    "delete": "ያስወግዱ",
+    "confirmDelete": "ይህን እቃ ለመሰረዝ እርግጠኛ ነዎት?",
+    "itemAdded": "እቃው በተሳካ ሁኔታ ተጨምሯል",
+    "itemUpdated": "እቃው በተሳካ ሁኔታ ተዘምኗል",
+    "itemDeleted": "እቃው በተሳካ ሁኔታ ተሰርዟል",
+    "error": "ስህተት ተከስቷል",
+    "refresh": "ያድሱ",
+    "selectSalesman": "ሻጭ ይምረጡ",
+    "selectItem": "እቃ ይምረጡ",
+    "selectFraction": "ክፍልፋይ ይምረጡ",
+    "chooseFraction": "ክፍልፋይ ይምረጡ",
+    "noFractionsAvailable": "ለዚህ እቃ ክፍልፋዮች አልተገኙም",
+    "selectFractionToContinue": "እባክዎ ለመቀጠል ክፍልፋይ ይምረጡ",
+    "purchasePrice": "የግዢ ዋጋ",
+    "bought": "የተጨመረው ብዛት",
+    "sold": "የተሸጠው ብዛት",
+    "date": "ቀን",
+    "@date": {
+        "placeholders": {
+            "date": {
+                "type": "String"
+            }
+        }
+    },
+    "noItemsAssigned": "ምንም እቃዎች አልተመደቡልዎትም",
+    "loading": "በመጫን ላይ...",
+    "dashboard": "ዳሽቦርድ",
+    "trialPeriod": "የሙከራ ጊዜ",
+    "trialEndsOn": "የሙከራዎ ጊዜ በ {date} ያበቃል። ሁሉንም ባህሪያት ለመጠቀም ወደ የተከፈለ እቅድ ያሻሽሉ።",
+    "viewPlans": "እቅዶችን ይመልከቱ",
+    "todaysSalesBySalesman": "የዛሬ ሽያጮች በሽያጭ ሰራተኛ",
+    "noSalesToday": "ዛሬ ምንም ሽያጭ አልተመዘገበም።",
+    "totalSales": "ጠቅላላ ሽያጮች",
+    "salesCount": "የሽያጭ ብዛት",
+    "salesTrend": "የሽያጭ አዝማሚያ (የመጨረሻው 30 ቀናት)",
+    "topSellingItems": "ከፍተኛ የሚሸጡ እቃዎች",
+    "menu": "ምናሌ",
+    "salesPerson": "የሽያጭ ሰራተኞች",
+    "shops": "ሱቆች",
+    "categories": "ምድቦች",
+    "items": "እቃዎች",
+    "storedItems": "የተጨመሩ እቃዎች",
+    "sales": "የሽያጭ ታሪክ",
+    "subscription": "የደንበኝነት ምዝገባ",
+    "logout": "ውጣ",
+    "transactions": "ግብይቶች",
+    "availableItems": "ያሉ እቃዎች",
+    "ownerHome": "የባለቤት መነሻ",
+    "saleDetails": "የሽያጭ ዝርዝሮች",
+    "users": "ተጠቃሚዎች",
+    "fractionManagement": "ክፍልፋይ አስተዳደር",
+    "items": "እቃዎች",
+    "itemDetails": "የእቃ ዝርዝሮች",
+    "addNew": "አዲስ አክል",
+    "edit": "አስተካክል",
+    "delete": "ሰርዝ",
+    "save": "አስቀምጥ",
+    "cancel": "ይቅር",
+    "confirmDelete": "ይህን ተጠቃሚ መሰረዝ እንደሚፈልጉ እርግጠኛ ነዎት?",
+    "name": "ስም",
+    "description": "መግለጫ",
+    "price": "ዋጋ",
+    "quantity": "ብዛት",
+    "category": "ምድብ",
+    "fraction": "ክፍልፋይ",
+    "status": "ሁኔታ",
+    "total": "ጠቅላላ",
+    "details": "ዝርዝሮች",
+    "noData": "ዳሰሳ አልተገኘም",
+    "loading": "በመጫን ላይ...",
+    "error": "ስህተት ተከስቷል",
+    "success": "ተሳክቷል",
+    "search": "ፈልግ",
+    "filter": "አጣራ",
+    "sort": "ያዝዝ",
+    "refresh": "አደስ",
+    "back": "ተመለስ",
+    "next": "ቀጣይ",
+    "previous": "ቀዳሚ",
+    "submit": "አስገባ",
+    "reset": "እንደገና ጀምር",
+    "close": "ዝጋ",
+    "open": "ክፈት",
+    "active": "ንቁ",
+    "inactive": "ንቁ አይደለም",
+    "pending": "በመጠበቅ ላይ",
+    "completed": "ተጠናቅቋል",
+    "failed": "አልተሳካም",
+    "view": "ይመልከቱ",
+    "update": "አዘምን",
+    "create": "ፍጠር",
+    "remove": "አስወግድ",
+    "add": "አክል",
+    "select": "ምረጥ",
+    "all": "ሁሉም",
+    "none": "ምንም",
+    "yes": "አዎ",
+    "no": "አይ",
+    "confirm": "አረጋግጥ",
+    "cancel": "ይቅር",
+    "apply": "ተግብር",
+    "clear": "አጽዳ",
+    "done": "ተጠናቅቋል",
+    "settings": "ቅንብሮች",
+    "profile": "መገለጫ",
+    "help": "እርዳታ",
+    "about": "ስለ",
+    "contact": "ያግኙን",
+    "support": "ድጋፍ",
+    "feedback": "ግብረመልስ",
+    "terms": "ውሎች",
+    "privacy": "ግላዊነት",
+    "theme": "ገጽታ",
+    "dark": "ጨለማ",
+    "light": "ብርሃን",
+    "system": "ስርዓት",
+    "notifications": "ማስታወቂያዎች",
+    "security": "የደህንነት",
+    "account": "መለያ",
+    "password": "የይለፍ ቃል",
+    "email": "ኢሜይል",
+    "phone": "ስልክ",
+    "address": "አድራሻ",
+    "city": "ከተማ",
+    "state": "ክልል",
+    "country": "አገር",
+    "zipCode": "የፖስታ ኮድ",
+    "currency": "ምንዛሪ",
+    "timezone": "የጊዜ ቦታ",
+    "dateFormat": "የቀን ቅርጸት",
+    "timeFormat": "የጊዜ ቅርጸት",
+    "numberFormat": "የቁጥር ቅርጸት",
+    "decimalSeparator": "የአስርዮሽ መለያ",
+    "thousandSeparator": "የሺህ መለያ",
+    "currencySymbol": "ብር",
+    "currencyPosition": "የምንዛሪ አቀማመጥ",
+    "before": "ከፊት",
+    "after": "ከኋላ",
+    "left": "ግራ",
+    "right": "ቀኝ",
+    "center": "ማዕከል",
+    "top": "ላይኛው",
+    "bottom": "ታችኛው",
+    "start": "ጀምር",
+    "end": "ጨርስ",
+    "middle": "መካከል",
+    "between": "መካከል",
+    "around": "ዙሪያ",
+    "evenly": "እኩል",
+    "stretch": "ዘርጋ",
+    "baseline": "መሰረት",
+    "space": "ቦታ",
+    "wrap": "አጠመዝ",
+    "nowrap": "አያጠምዝ",
+    "reverse": "አገላብጥ",
+    "horizontal": "አግድም",
+    "vertical": "አቀባዊ",
+    "row": "ረድፍ",
+    "column": "አምድ",
+    "grid": "ፍርግርግ",
+    "list": "ዝርዝር",
+    "table": "ሠንጠረዥ",
+    "card": "ካርድ",
+    "dialog": "ንግግር",
+    "sheet": "ቅጽ",
+    "drawer": "ቅርጸት",
+    "bottomSheet": "የታችኛው ቅጽ",
+    "snackbar": "ማስታወቂያ",
+    "tooltip": "የመሳሪያ ጫፍ",
+    "popup": "የሚከፈት",
+    "modal": "የሚታይ",
+    "overlay": "የሚያሳይ",
+    "notification": "ማስታወቂያ",
+    "alert": "ማስጠንቀቂያ",
+    "warning": "ማስጠንቀቂያ",
+    "info": "መረጃ",
+    "debug": "አስረዛ",
+    "trace": "አስርዝ",
+    "verbose": "ዝርዝር",
+    "fatal": "ወሳኝ",
+    "critical": "ወሳኝ",
+    "severe": "ከባድ",
+    "major": "ዋና",
+    "minor": "ትንሽ",
+    "trivial": "ትንሽ",
+    "low": "ዝቅተኛ",
+    "medium": "መካከለኛ",
+    "high": "ከፍተኛ",
+    "urgent": "አደገኛ",
+    "important": "አስፈላጊ",
+    "normal": "መደበኛ",
+    "optional": "አማራጭ",
+    "required": "ያስፈልጋል",
+    "mandatory": "የሚያስፈልግ",
+    "recommended": "የሚመከር",
+    "suggested": "የሚመከር",
+    "defaultValue": "ነባሪ",
+    "custom": "ብጁ",
+    "other": "ሌላ",
+    "unknown": "ያልታወቀ",
+    "undefined": "ያልተገለጸ",
+    "nullValue": "ባዶ",
+    "empty": "ባዶ",
+    "blank": "ባዶ",
+    "zero": "ዜሮ",
+    "one": "አንድ",
+    "two": "ሁለት",
+    "three": "ሶስት",
+    "four": "አራት",
+    "five": "አምስት",
+    "six": "ስድስት",
+    "seven": "ሰባት",
+    "eight": "ስምንት",
+    "nine": "ዘጠኝ",
+    "ten": "አስር",
+    "hundred": "መቶ",
+    "thousand": "ሺህ",
+    "million": "ሚሊዮን",
+    "billion": "ቢሊዮን",
+    "trillion": "ትሪሊዮን",
+    "quadrillion": "ኳድሪሊዮን",
+    "quintillion": "ኩዊንቲሊዮን",
+    "sextillion": "ሴክስቲሊዮን",
+    "septillion": "ሴፕቲሊዮን",
+    "octillion": "ኦክቲሊዮን",
+    "nonillion": "ኖኒሊዮን",
+    "decillion": "ዴሲሊዮን",
+    "undecillion": "አንዴሲሊዮን",
+    "duodecillion": "ዱዎዴሲሊዮን",
+    "tredecillion": "ትሬዴሲሊዮን",
+    "quattuordecillion": "ኳቱዎርዴሲሊዮን",
+    "quindecillion": "ኩዊንዴሲሊዮን",
+    "sexdecillion": "ሴክስዴሲሊዮን",
+    "septendecillion": "ሴፕተንዴሲሊዮን",
+    "octodecillion": "ኦክቶዴሲሊዮን",
+    "novemdecillion": "ኖቨምዴሲሊዮን",
+    "vigintillion": "ቪጂንቲሊዮን",
+    "username": "የተጠቃሚ ስም",
+    "unknownItem": "ያልታወቀ እቃ",
+    "unknownSalesman": "ያልታወቀ ሻጭ",
+    "notSet": "አልተቀመጠም",
+    "ratio": "ጥምር",
+    "invalidNumber": "እባክዎ ትክክለኛ ቁጥር ያስገቡ",
+    "addBoughtItem": "የተጨመረ እቃ መዝግብ",
+    "editBoughtItem": "የተጨመረ እቃ አስተካክል",
+    "selectSalesman": "ሻጭ ይምረጡ",
+    "selectItem": "እቃ ይምረጡ",
+    "selectFraction": "ክፍልፋይ ይምረጡ",
+    "purchasePrice": "የግዢ ዋጋ",
+    "quantity": "ብዛት",
+    "location": "አድራሻ",
+    "selectExpiryDate": "የማብቂያ ቀን ይምረጡ",
+    "expiryDate": "የማብቂያ ቀን",
+    "cancel": "ይቅር",
+    "save": "አስቀምጥ",
+    "deleteBoughtItem": "የተጨመረ እቃ ሰርዝ",
+    "confirmDeleteBought": "ይህን የተጨመረ እቃ መሰረዝ እውነት ነው?",
+    "delete": "ሰርዝ",
+    "boughtItems": "የተጨመሩ እቃዎች",
+    "noBoughtItems": "የተጨመሩ እቃዎች አልተገኙም",
+    "salesman": "ሻጭ",
+    "availableItems": "ያሉ እቃዎች",
+    "created": "የተፈጠረ",
+    "expiry": "የሚያበቃ",
+    "edit": "አስተካክል",
+    "noFractionsAvailable": "ለዚህ እቃ ክፍልፋዮች አልተገኙም",
+    "chooseFraction": "ክፍልፋይ ይምረጡ",
+    "ratio": "ጥምር",
+    "selectFractionToContinue": "እባክዎ ለመቀጠል ክፍልፋይ ይምረጡ",
+    "notSet": "አልተቀመጠም",
+    "unknownItem": "ያልታወቀ እቃ",
+    "unknownSalesman": "ያልታወቀ ሻጭ",
+    "invalidNumber": "እባክዎ ትክክለኛ ቁጥር ያስገቡ",
+    "required": "ይህ መስክ ያስፈልጋል",
+    "success": "ክዋኔው በተሳካ ሁኔታ ተጠናቅቋል",
+    "error": "ስህተት ተከስቷል",
+    "noAvailableItems": "ያሉ እቃዎች አልተገኙም",
+    "salesmanDashboard": "የሽያጭ ሰራተኛ ዳሽቦርድ",
+    "totalSales": "ጠቅላላ ሽያጮች",
+    "totalItemsSold": "ጠቅላላ የተሸጡ እቃዎች",
+    "todaysSales": "የዛሬ ሽያጮች",
+    "dashboard": "ዳሽቦርድ",
+    "sellItem": "እቃ ይሽጡ",
+    "availableItems": "ያሉ እቃዎች",
+    "salesHistory": "የሽያጭ ታሪክ",
+    "logout": "ውጣ",
+    "failedToLoadDashboard": "የዳሽቦርድ ዳሰሳ አልተሳካም: {error}",
+    "@failedToLoadDashboard": {
+        "placeholders": {
+            "error": {
+                "type": "String"
+            }
+        }
+    },
+    "failedToLogout": "ውጣት አልተሳካም: {error}",
+    "@failedToLogout": {
+        "placeholders": {
+            "error": {
+                "type": "String"
+            }
+        }
+    },
+    "quantity": "ብዛት: {amount} {unit}",
+    "@quantity": {
+    "placeholders": {
+        "amount": {
+        "type": "double"
+        },
+        "unit": {
+        "type": "String"
+        }
+    }
+    },
+    "quantityLabel": "ብዛት",
+    "item": "እቃ",
+    "fraction": "ክፍልፋይ",
+    "createSale": "ሽያጭ ፍጠር",
+    "saleCreatedSuccessfully": "ሽያጭ በተሳካ ሁኔታ ተፈጥሯል",
+    "errorLoadingData": "ዳሰሳ ስህተት: {error}",
+    "@errorLoadingData": {
+        "placeholders": {
+            "error": {
+                "type": "String"
+            }
+        }
+    },
+    "errorCreatingSale": "ስህተት: {error}",
+    "@errorCreatingSale": {
+        "placeholders": {
+            "error": {
+                "type": "String"
+            }
+        }
+    },
+    "selectItem": "እቃ ይምረጡ",
+    "selectUnit": "መለኪያ ይምረጡ",
+    "pleaseSelectItem": "እባክዎ እቃ ይምረጡ",
+    "pleaseSelectUnit": "እባክዎ መለኪያ ይምረጡ",
+    "pleaseEnterQuantity": "እባክዎ ብዛት ያስገቡ",
+    "pleaseEnterValidNumber": "እባክዎ ትክክለኛ ቁጥር ያስገቡ",
+    "quantityMustBeGreaterThanZero": "ብዛቱ ከ 0 በላይ መሆን አለበት",
+    "availableQuantityIs": "ያለው ብዛት {quantity} ነው",
+    "@availableQuantityIs": {
+        "placeholders": {
+            "quantity": {
+                "type": "double"
+            }
+        }
+    },
+    "availableQuantityWithLoading": "ያለው ብዛት: {quantity}",
+    "@availableQuantityWithLoading": {
+        "placeholders": {
+            "quantity": {
+                "type": "String"
+            }
+        }
+    },
+    "expectedAmountWithCurrency": "የሚጠበቅ መጠን(ብር): ${amount}",
+    "@expectedAmountWithCurrency": {
+        "placeholders": {
+            "amount": {
+                "type": "String"
+            }
+        }
+    },
+    "expectedAmount": "የሚጠበቅ መጠን(ብር): ${amount}",
+    "@expectedAmount": {
+        "placeholders": {
+            "amount": {
+                "type": "String"
+            }
+        }
+    },
+    "processing": "በሂደት ላይ...",
+    "sellItem": "እቃ ይሽጡ",
+    "retry": "እንደገና ይሞክሩ",
+    "noItemsAssignedToYou": "ምንም እቃዎች አልተመደቡም",
+    "failedToLoadData": "ዳሰሳ አልተሳካም። እባክዎ እንደገና ይሞክሩ።",
+    "itemNotAssignedToYou": "ይህ እቃ አልተመደበም",
+    "itemNotFound": "እቃው አልተገኘም",
+    "errorFindingPreSelectedItem": "የተመረጠ እቃ ማግኘት ስህተት",
+    "selectedFractionNotFound": "የተመረጠ ክፍልፋይ አልተገኘም",
+    "noFractionsAvailableForItem": "ለዚህ እቃ ክፍልፋዮች አልተገኙም",
+    "errorFindingPreSelectedFraction": "የተመረጠ ክፍልፋይ ማግኘት ስህተት",
+    "failedToFetchAvailableQuantity": "ያለው ብዛት ማግኘት አልተሳካም። እባክዎ እንደገና ይሞክሩ።",
+    "pleaseSelectItemAndFraction": "እባክዎ እቃ እና ክፍልፋይ ይምረጡ",
+    "itemSoldSuccessfully": "እቃው በተሳካ ሁኔታ ተሸጥቷል",
+    "failedToProcessSale": "ሽያጭ ማስኬድ አልተሳካም። እባክዎ እንደገና ይሞክሩ።",
+    "failedToUpdateAvailableQuantity": "ያለው ብዛት ማዘመን አልተሳካም",
+    "loading": "በመጫን ላይ...",
+    "salesHistory": "የሽያጭ ታሪክ",
+    "noSalesFound": "ምንም ሽያጮች አልተገኙም",
+    "errorLoadingSales": "ሽያጮች መጫን ስህተት: {error}",
+    "@errorLoadingSales": {
+        "placeholders": {
+            "error": {
+                "type": "String"
+            }
+        }
+    },
+    "quantityWithUnit": "ብዛት: {quantity} {unit}",
+    "@quantityWithUnit": {
+        "placeholders": {
+            "quantity": {
+                "type": "String"
+            },
+            "unit": {
+                "type": "String"
+            }
+        }
+    },
+    "amountWithCurrency": "መጠን(ብር): ${amount}",
+    "@amountWithCurrency": {
+        "placeholders": {
+            "amount": {
+                "type": "String"
+            }
+        }
+    },
+    "availableItemsWithUnit": "ያሉ እቃዎች: {quantity} {unit}",
+    "@availableItemsWithUnit": {
+        "placeholders": {
+            "quantity": {
+                "type": "String"
+            },
+            "unit": {
+                "type": "String"
+            }
+        }
+    },
+    "dateWithFormat": "ቀን: {date}",
+    "@dateWithFormat": {
+        "placeholders": {
+            "date": {
+                "type": "String"
+            }
+        }
+    },
+    "itemDetails": "ዕቃ ዝርዝር",
+    "noCategory": "ምድብ የለም",
+    "units": "መለኪያዎች",
+    "manageUnits": "መለኪያዎችን አስተዳድር",
+    "noUnitsAddedYet": "ገና መለኪያዎች አልተጨመረም",
+    "ratioAndPrice": "መጠን: {ratio}, ዋጋ: \u0024{price}",
+    "@ratioAndPrice": {
+        "placeholders": {
+            "ratio": {
+                "type": "double"
+            },
+            "price": {
+                "type": "double"
+            }
+        }
+    },
+    "fractionAddedSuccessfully": "መለኪያ በተሳካት ተጨምሯል",
+    "unitUpdatedSuccessfully": "መለኪያ በተሳካት ተዘምኗል",
+    "deleteUnit": "መለኪያ ሰርዝ",
+    "confirmDeleteUnit": "ይህን መለኪያ መሰረዝ እርግጠኛ ነዎት?",
+    "unitDeletedSuccessfully": "መለኪያ በተሳካት ተሰርዟል",
+    "manageUnitsFor": "መለኪያዎችን አስተዳድር - {itemName}",
+    "@manageUnitsFor": {
+        "placeholders": {
+            "itemName": {
+                "type": "String"
+            }
+        }
+    },
+    "unitName": "መለኪያ ስም",
+    "pleaseEnterName": "እባክዎ ስም ያስገቡ",
+    "pleaseEnterRatio": "እባክዎ መጠን ያስገቡ",
+    "pleaseEnterPrice": "እባክዎ ዋጋ ያስገቡ",
+    "addUnit": "መለኪያ ጨምር",
+    "addPrimarySellingUnitDescription": "ለዚህ እቃ መለኪያ ይጨምሩ። ለምሳሌ ሊትር፣ ጠርሙስ፣ ኪሎ፣ ነጠላ ወዘተ።",
+    "existingUnits": "ያሉ መለኪያዎች",
+    "selectShop": "ሱቅ ይምረጡ",
+    "shop": "ሱቅ",
+    "unknownShop": "ያልታወቀ ሱቅ",
+    "addBoughtItem": "የተጨመረ እቃ መዝግብ",
+    "editBoughtItem": "የተጨመረ እቃ አስተካክል",
+    "loginTitle": "ግባ!",
+    "loginSubtitle": "መደብርዎን ያስተዳድሩ!",
+    "loginButton": "ግባ",
+    "registerBusiness": "ንግድዎን ይመዝግቡ",
+    "usernameLabel": "የተጠቃሚ ስም",
+    "passwordLabel": "የይለፍ ቃል",
+    "usernameRequired": "እባክዎ የተጠቃሚ ስምዎን ያስገቡ",
+    "passwordRequired": "እባክዎ የይለፍ ቃልዎን ያስገቡ",
+    "loginFailed": "መግባት አልተሳካም",
+    "noSalespeopleFound": "ምንም ሻጮች አልተገኙም",
+    "usernameWithValue": "የተጠቃሚ ስም: {username}",
+    "@usernameWithValue": {
+        "placeholders": {
+            "username": { "type": "String" }
+        }
+    },
+    "phoneWithValue": "ስልክ: {phone}",
+    "@phoneWithValue": {
+        "placeholders": {
+            "phone": { "type": "String" }
+        }
+    },
+    "locationWithValue": "አድራሻ: {location}",
+    "@locationWithValue": {
+        "placeholders": {
+            "location": { "type": "String" }
+        }
+    },
+    "shopWithValue": "ሱቅ: {shop}",
+    "@shopWithValue": {
+        "placeholders": {
+            "shop": { "type": "String" }
+        }
+    },
+    "noShopAssigned": "የተመደበ ሱቅ የለም",
+    "createNewShop": "አዲስ ሱቅ ፍጠር",
+    "shopNameLabel": "የሱቅ ስም",
+    "enterShopNameHint": "የሱቅ ስም ያስገቡ",
+    "pleaseEnterShopName": "እባክዎ የሱቅ ስም ያስገቡ",
+    "shopAddressLabel": "የሱቅ አድራሻ",
+    "enterShopAddressHint": "የሱቅ አድራሻ ያስገቡ",
+    "pleaseEnterShopAddress": "እባክዎ የሱቅ አድራሻ ያስገቡ",
+    "shopCreatedSuccess": "ሱቅ በተሳካ ሁኔታ ተፈጥሯል!",
+    "shopCreatedFailed": "ሱቅ መፍጠር አልተቻለም",
+    "deleteShopTitle": "ሱቅ ሰርዝ",
+    "deleteShopContent": "\"{shopName}\" ሱቅ ማጥፋት እርግጠኛ ነዎት? ይህ እርምጃ ማድረግ አይቻልም።",
+    "shopDeletedSuccess": "ሱቅ በተሳካ ሁኔታ ተሰርዟል",
+    "shopDeletedFailed": "ሱቅ መሰረዝ አልተቻለም",
+    "removeSalespersonTitle": "ሻጭን ያስወግዱ",
+    "removeSalespersonContent": "{salesperson}ን ከ{shop} ማስወገድ እርግጠኛ ነዎት?",
+    "cancel": "ይቅር",
+    "remove": "ያስወግዱ",
+    "assignSalespersonTitle": "ሻጭ ይመድቡ",
+    "noAvailableSalespeople": "ለመመደብ ምንም የተዘጋጀ ሻጭ የለም",
+    "salespeopleTab": "ሻጮች",
+    "availableItemsTab": "ያሉ እቃዎች",
+    "salespersonAssigned": "{salesperson} ወደ {shop} ተመድቧል",
+    "failedToAssignSalesperson": "ሻጭ መመደብ አልተቻለም",
+    "salespersonRemoved": "{salesperson} ከ{shop} ተወግዷል",
+    "failedToRemoveSalesperson": "ሻጭ ማስወገድ አልተቻለም",
+    "createdLabel": "የተፈጠረ",
+    "assignLabel": "መድብ",
+    "noSalespeopleAssigned": "ምንም ሻጮች አልተመደቡም",
+    "assignSalespeopleToShop": "ሻጮችን ወደዚህ ሱቅ ለመመደብ ይጀምሩ",
+    "boughtBy": "የጨመረው: {name}",
+    "@boughtBy": {
+        "placeholders": {
+            "name": { "type": "String" }
+        }
+    },
+    "soldBy": "የሸጠው: {name}",
+    "@soldBy": {
+        "placeholders": {
+            "name": { "type": "String" }
+        }
+    },
+    "noShopsFound": "ምንም መደብር አልተገኘም",
+    "createFirstShopToGetStarted": "ለመጀመር የመጀመሪያውን መደብር ይፍጠሩ",
+    "viewDetails": "ዝርዝሮችን ይመልከቱ",
+    "salespeople": "ሽያጭ ሰራተኞች",
+    "deleteSaleTitle": "ሽያጩን ሰርዝ",
+    "deleteSaleContent": "ይህን ሽያጭ ማስወገድ እንደሚፈልጉ እርግጠኛ ነዎት? ይህ እርምጃ ማድረግ አይቻልም።",
+    "saleDeletedSuccess": "ሽያጩ በተሳካ ሁኔታ ተሰርዟል",
+    "unknownSalesman": "ያልታወቀ ሻጭ",
+    "amountLabel": "መጠን(ብር)",
+    "availableLabel": "ያለው",
+    "dateLabel": "ቀን",
+    "viewAs": "እንደ {fraction} ይመልከቱ",
+    "@viewAs": { "placeholders": { "fraction": { "type": "Object" } } },
+    "summary": "ማጠቃለያ",
+    "today": "ዛሬ",
+    "fromDate": "ከ: {date}",
+    "@fromDate": { "placeholders": { "date": { "type": "String" } } },
+    "toDate": "እስከ: {date}",
+    "@toDate": { "placeholders": { "date": { "type": "String" } } },
+    "pleaseSelectDateRange": "እባክዎ የቀን ክልል ይምረጡ",
+    "noShopsAvailable": "ሱቆች አልተገኙም",
+    "pleaseSelectShop": "እባክዎ ሱቅ ይምረጡ",
+    "boughtAmount": "የተገዛበት ገንዘብ",
+    "soldAmount": "የተሸጠበት ገንዘብ",
+    "netIncome": "የተጣራ ገንዘብ",
+    "unit": "መለኪያ",
+    "prevQty": "በፊት የነበረው ብዛት",
+    "boughtAmt": "የተገዛበት ገንዘብ",
+    "soldAmt": "የተሸጠበት ገንዘብ",
+    "net": "የተጣራ ገንዘብ",
+    "remaining": "ያለው ብዛት",
+    "profit": "ትርፍ ገንዘብ",
+    "noItemFoundInAvailableItems": "በያሉ እቃዎች ውስጥ እቃው አልተገኘም",
+    "noDataForSelectedPeriod": "ለተመረጠው ጊዜ ምንም ዳታ የለም",
+    "na": "አልተገኘም",
+    "adminDashboard": "የአድሚን ዳሽቦርድ",
+    "businessesLabel": "ንግዶች",
+    "noBusinessesFound": "ምንም ንግዶች አልተገኙም",
+    "noUsersFound": "ምንም ተጠቃሚዎች አልተገኙም",
+    "emailWithValue": "ኢሜይል: {value}",
+    "@emailWithValue": { "placeholders": { "value": { "type": "String" } } },
+    "planWithValue": "እቅድ: {value}",
+    "@planWithValue": { "placeholders": { "value": { "type": "String" } } },
+    "statusWithValue": "ሁኔታ: {value}",
+    "@statusWithValue": { "placeholders": { "value": { "type": "String" } } },
+    "roleWithValue": "ሚና: {value}",
+    "@roleWithValue": { "placeholders": { "value": { "type": "String" } } },
+    "businessWithValue": "ንግድ: {value}",
+    "@businessWithValue": { "placeholders": { "value": { "type": "String" } } },
+    "viewingDetailsFor": "ዝርዝር እየታየ ነው: {name}",
+    "@viewingDetailsFor": { "placeholders": { "name": { "type": "String" } } },
+    "userStatusUpdatedSuccessfully": "የተጠቃሚው ሁኔታ በተሳካ ሁኔታ ተዘምኗል",
+    "errorWithDetails": "ስህተት: {details}",
+    "@errorWithDetails": { "placeholders": { "details": { "type": "String" } } },
+    "subscriptionStatusUpdatedTo": "የደንበኝነት ሁኔታ ወደ {status} ተቀይሯል",
+    "@subscriptionStatusUpdatedTo": { "placeholders": { "status": { "type": "String" } } },
+    "businessInformation": "የንግድ መረጃ",
+    "subscriptionInformation": "የደንበኝነት መረጃ",
+    "businessStatistics": "የንግድ ስታቲስቲክስ",
+    "idLabel": "መለያ",
+    "nameLabel": "ስም",
+    "emailLabel": "ኢሜይል",
+    "phoneLabel": "ስልክ",
+    "addressLabel": "አድራሻ",
+    "activeLabel": "ንቁ",
+    "planLabel": "እቅድ",
+    "statusLabel": "ሁኔታ",
+    "trialEndsLabel": "የሙከራ ጊዜ ያበቃል",
+    "subscriptionEndsLabel": "የደንበኝነት ጊዜ ያበቃል",
+    "activate": "አንቃ",
+    "suspend": "አቁም",
+    "cancelSubscription": "ሰርዝ",
+    "profitMargin": "የትርፍ መጠን(ብር)",
+    "searchItems": "እቃዎችን ፈልግ",
+    "errorLoadingItems": "እቃዎችን መጫን ስህተት: {error}",
+    "@errorLoadingItems": {
+        "placeholders": {
+            "error": { "type": "String" }
+        }
+    },
+    "availableFractions": "ያሉ መለኪያዎች",
+    "sellThisItem": "ይህን እቃ ሽጥ",
+    "errorNavigatingToSellScreen": "ወደ መሸጫ ገጽ መሄድ ስህተት: {error}",
+    "@errorNavigatingToSellScreen": {
+        "placeholders": {
+            "error": { "type": "String" }
+        }
+    },
+    "profitWithAmount": "ትርፍ: {amount}",
+    "@profitWithAmount": {
+        "placeholders": {
+            "amount": { "type": "String" }
+        }
+    },
+    "saleInformation": "የሽያጭ መረጃ",
+    "itemInformation": "የእቃ መረጃ",
+    "financialInformation": "የገንዘብ መረጃ",
+    "saleIdLabel": "የሽያጭ መለያ",
+
+  "forgotPassword": "የይልቅት መጠን",
+  "forgotPasswordDescription": "የይልቅት መጠን ለምሳሌ ፓስ፣ ቦክስ፣ ቦትል፣ ኪሎግራም፣ ሊትር ወዘተ።",
+  "phoneNumber": "ስልቅ ቁጫር",
+  "phoneNumberHint": "የስልቅ ቁጫርህ ያስገቡ",
+  "pleaseEnterPhoneNumber": "እባክዎ ስልቅ ቁጫር ያስገቡ",
+  "phoneNumberMustBeAtLeast10Digits": "ስልቅ ቁጫር ቢምላ 10 ዲማቃ መለኪይ አለተ",
+  "sendOTP": "OTP ይልክ",
+  "sendingOTP": "OTP በልቭተ...",
+  "backToLogin": "ወደ መግብር መለልቅ",
+  "otpVerification": "OTP ማርን",
+  "otpDescription": "ወደ ስልቅ የተልከቱ የሚያ ኮጥድ ኮጥድ",
+  "enterOTP": "OTP ያስገቡ",
+  "pleaseEnterOTP": "OTP ያስገቡ",
+  "otpMustBe6Digits": "OTP 6 ዲማቃ መለኪይ አለተ",
+  "verifyOTP": "OTP ማርን",
+  "verifyingOTP": "OTP በልቭተ...",
+  "resendOTP": "OTP እንው ልክ",
+  "resetPassword": "የይልቅት መጠን",
+  "resetPasswordDescription": "አዲለ የይልቅት እታየ",
+  "newPassword": "አዲለ የይልቅት",
+  "confirmNewPassword": "አዲለ የይልቅት ማርን",
+  "pleaseEnterNewPassword": "አዲለ የይልቅት ያስገቡ",
+  "pleaseConfirmPassword": "አዲለ የይልቅት ማርን ያስገቡ",
+  "passwordsDoNotMatch": "የይልቅትዎች አይደም",
+  "passwordMustBeAtLeast6Characters": "የይልቅት 6 ዲማቃ መለኪይ አለተ",
+  "resettingPassword": "የይልቅት በጠን...",
+  "passwordResetSuccessfully": "የይልቅት በጠን ተአለተ",
+  "invalidOTP": "ዋ�ሚም OTP",
+  "otpExpired": "OTP ጊዜ ተልከቱ",
+  "otpSentSuccessfully": "OTP በልቭተ ተአለተ"
+
+}

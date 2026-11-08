@@ -1,0 +1,104 @@
+import 'package:inventory_frontend/models/item.dart';
+import 'package:inventory_frontend/models/user.dart';
+import 'package:inventory_frontend/models/fraction.dart';
+
+class SoldItem {
+  final String id;
+  final String itemId;
+  final String fractionId;
+  final double quantity;
+  final double soldPrice;
+  final String businessId;
+  final String? shopId;
+  final String? salesmanId;
+  final DateTime createdAt;
+  final Fraction? fraction;
+  final Item? item;
+  final User? salesman;
+  final double? available_items_count;
+  final String? availableItemId;
+  final double? profit;
+
+  SoldItem({
+    required this.id,
+    required this.itemId,
+    required this.fractionId,
+    required this.quantity,
+    required this.soldPrice,
+    required this.businessId,
+    this.shopId,
+    this.salesmanId,
+    required this.createdAt,
+    this.fraction,
+    this.item,
+    this.salesman,
+    this.available_items_count,
+    this.availableItemId,
+    this.profit,
+  });
+
+  factory SoldItem.fromJson(Map<String, dynamic> json) {
+    print('Parsing SoldItem: $json'); // Debug log
+
+    final soldPriceRaw = json['soldPrice'] ?? json['amount'] ?? json['expectedAmount'];
+    return SoldItem(
+      id: json['id'],
+      itemId: json['itemId'],
+      fractionId: json['fractionId'],
+      quantity: (json['quantity'] == null)
+          ? 0.0
+          : (json['quantity'] is int)
+              ? (json['quantity'] as int).toDouble()
+              : json['quantity'],
+      soldPrice: (soldPriceRaw == null)
+          ? 0.0
+          : (soldPriceRaw is num)
+              ? soldPriceRaw.toDouble()
+              : double.tryParse(soldPriceRaw.toString()) ?? 0.0,
+      businessId: json['businessId'],
+      shopId: json['shopId'],
+      salesmanId: json['salesmanId'],
+      createdAt: DateTime.parse(json['createdAt']),
+      item: json['Item'] != null ? Item.fromJson(json['Item']) : null,
+      fraction: json['Item']?['fractions'] != null && json['Item']?['fractions'].isNotEmpty 
+          ? Fraction.fromJson(json['Item']['fractions'].firstWhere(
+              (f) => f['id'] == json['fractionId'],
+              orElse: () => null,
+            ))
+          : null,
+      salesman: json['salesman'] != null ? User.fromJson(json['salesman']) : null,
+      available_items_count: json['available_items_count'] != null ? double.tryParse(json['available_items_count'].toString()) : null,
+      availableItemId: json['availableItemId'],
+      profit: json['profit'] != null
+          ? (json['profit'] is int)
+              ? (json['profit'] as int).toDouble()
+              : (json['profit'] as num).toDouble()
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'itemId': itemId,
+      'fractionId': fractionId,
+      'quantity': quantity,
+      'soldPrice': soldPrice,
+      'businessId': businessId,
+      'shopId': shopId,
+      'salesmanId': salesmanId,
+      'createdAt': createdAt.toIso8601String(),
+      'fraction': fraction?.toJson(),
+      'item': item?.toJson(),
+      'salesman': salesman?.toJson(),
+      'available_items_count': available_items_count,
+      'availableItemId': availableItemId,
+      'profit': profit,
+    };
+  }
+
+  @override
+  String toString() {
+    return 'SoldItem(id: $id, itemId: $itemId, fractionId: $fractionId, quantity: $quantity, soldPrice: $soldPrice, businessId: $businessId, shopId: $shopId, salesmanId: $salesmanId, createdAt: $createdAt, fraction: $fraction, item: $item, available_items_count: $available_items_count, availableItemId: $availableItemId)';
+  }
+}

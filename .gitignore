@@ -1,0 +1,11 @@
+# Secrets / local environment
+inventory_backend/.env
+inventory_frontend/.env
+!**/.env.example
+
+# Dependencies
+node_modules/
+
+# Editors
+.idea/
+.vscode/

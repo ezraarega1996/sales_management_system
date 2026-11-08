@@ -1,0 +1,29 @@
+# Dart/Pub related
+.dart_tool/
+.packages
+.pub-cache/
+build/
+coverage/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.iml
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Node modules (if any frontend code)
+node_modules/
+
+# Docker files
+Dockerfile*
+docker-compose*
+
+# Misc
+*.swp
+*.swo
