@@ -5,6 +5,7 @@ import 'package:inventory_frontend/providers/available_item_provider.dart';
 import 'package:inventory_frontend/screens/owner/transactions_screen.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:inventory_frontend/screens/salesman/sell_item_screen.dart';
+import 'package:inventory_frontend/widgets/offline_banner.dart';
 
 class AvailableItemsScreen extends StatefulWidget {
   final String? shopId;
@@ -21,17 +22,20 @@ class _AvailableItemsScreenState extends State<AvailableItemsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAvailableItems();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAvailableItems();
+    });
   }
 
   Future<void> _loadAvailableItems() async {
     if (!mounted) return;
-    
+    final availableItemProvider = context.read<AvailableItemProvider>();
+    // Keep showing the current list while refreshing; only show a spinner when there is nothing yet
     setState(() {
-      _isLoading = true;
+      _isLoading = availableItemProvider.availableItems.isEmpty;
     });
 
-    final availableItemProvider = context.read<AvailableItemProvider>();
     await availableItemProvider.fetchAvailableItems(shopId: widget.shopId);
 
     if (mounted) {
@@ -48,20 +52,15 @@ class _AvailableItemsScreenState extends State<AvailableItemsScreen> {
   }
 
   void _navigateToTransactions(dynamic availableItem) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => TransactionsScreen(availableItem: availableItem),
-      ),
-    );
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => TransactionsScreen(availableItem: availableItem)));
   }
 
   void _onSellItem(dynamic availableItem, dynamic selectedFraction) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SellItemScreen(
-          preSelectedAvailableItem: availableItem,
-          preSelectedAvailableFraction: selectedFraction,
-        ),
+        builder:
+            (_) =>
+                SellItemScreen(preSelectedAvailableItem: availableItem, preSelectedAvailableFraction: selectedFraction),
       ),
     );
   }
@@ -69,15 +68,37 @@ class _AvailableItemsScreenState extends State<AvailableItemsScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final Widget content = _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Consumer<AvailableItemProvider>(
+    final Widget content =
+        _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Consumer<AvailableItemProvider>(
               builder: (context, availableItemProvider, child) {
                 if (availableItemProvider.availableItems.isEmpty) {
-                  return Center(
-                    child: Text(
-                      l10n.noItemsFound,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  final failed = availableItemProvider.error != null;
+                  return RefreshIndicator(
+                    onRefresh: _loadAvailableItems,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        const SizedBox(height: 96),
+                        Icon(failed ? Icons.cloud_off_rounded : Icons.inventory_2_outlined, size: 48),
+                        const SizedBox(height: 12),
+                        Center(
+                          child: Text(
+                            failed ? l10n.loadFailedNoData : l10n.noItemsFound,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (failed)
+                          Center(
+                            child: TextButton.icon(
+                              onPressed: _loadAvailableItems,
+                              icon: const Icon(Icons.refresh),
+                              label: Text(l10n.retry),
+                            ),
+                          ),
+                      ],
                     ),
                   );
                 }
@@ -85,21 +106,22 @@ class _AvailableItemsScreenState extends State<AvailableItemsScreen> {
                 return RefreshIndicator(
                   onRefresh: _loadAvailableItems,
                   child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(16),
                     itemCount: availableItemProvider.availableItems.length,
                     itemBuilder: (context, index) {
                       final availableItem = availableItemProvider.availableItems[index];
                       final itemFractions = availableItem.item?.fractions ?? [];
-                      final selectedFractionId = _selectedFractionIds[availableItem.id] ?? 
+                      if (itemFractions.isEmpty) return const SizedBox.shrink();
+                      final selectedFractionId =
+                          _selectedFractionIds[availableItem.id] ??
                           (itemFractions.isNotEmpty ? itemFractions.first.id : '');
                       final selectedFraction = itemFractions.firstWhere(
                         (f) => f.id == selectedFractionId,
                         orElse: () => itemFractions.first,
                       );
 
-                      final displayedQuantity = selectedFraction != null
-                          ? availableItem.quantity / selectedFraction.ratio
-                          : availableItem.quantity;
+                      final displayedQuantity = availableItem.quantity / selectedFraction.ratio;
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
@@ -153,11 +175,7 @@ class _AvailableItemsScreenState extends State<AvailableItemsScreen> {
                                   padding: const EdgeInsets.only(top: 4.0),
                                   child: Row(
                                     children: [
-                                      Icon(
-                                        Icons.inventory_2,
-                                        size: 14,
-                                        color: Colors.blue[600],
-                                      ),
+                                      Icon(Icons.inventory_2, size: 14, color: Colors.blue[600]),
                                       const SizedBox(width: 4),
                                       Text(
                                         '${displayedQuantity.toStringAsFixed(2)} ${selectedFraction.name}',
@@ -196,7 +214,10 @@ class _AvailableItemsScreenState extends State<AvailableItemsScreen> {
                                       onPressed: () => _onSellItem(availableItem, selectedFraction),
                                       icon: const Icon(Icons.point_of_sale, size: 16),
                                       label: Text(l10n.sellItem, style: const TextStyle(fontSize: 12)),
-                                      style: ElevatedButton.styleFrom(minimumSize: const Size(60, 28), padding: const EdgeInsets.symmetric(horizontal: 6)),
+                                      style: ElevatedButton.styleFrom(
+                                        minimumSize: const Size(60, 28),
+                                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -219,15 +240,10 @@ class _AvailableItemsScreenState extends State<AvailableItemsScreen> {
       return Scaffold(
         appBar: AppBar(
           title: Text(l10n.availableItems),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadAvailableItems,
-            ),
-          ],
+          actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAvailableItems)],
         ),
-        body: content,
+        body: Column(children: [const OfflineBanner(), Expanded(child: content)]),
       );
     }
   }
-} 
+}

@@ -7,53 +7,35 @@ class Item {
   final String categoryId;
   final Category? category;
   final List<Fraction>? fractions;
-  
-  Item({
-    required this.id,
-    required this.name,
-    required this.categoryId,
-    this.category,
-    this.fractions,
-  });
-  
-factory Item.fromJson(Map<String, dynamic> json) {
-  print('Item.fromJson: $json');
-  try {
-    List<Fraction>? fractionsList;
 
-    if (json['fractions'] != null) {
-      fractionsList = List<Fraction>.from(
-        json['fractions'].map((x) => Fraction.fromJson(x)),
+  Item({required this.id, required this.name, required this.categoryId, this.category, this.fractions});
+
+  factory Item.fromJson(Map<String, dynamic> json) {
+    try {
+      List<Fraction>? fractionsList;
+
+      if (json['fractions'] != null) {
+        fractionsList = List<Fraction>.from(json['fractions'].map((x) => Fraction.fromJson(x)));
+      }
+
+      return Item(
+        id: json['id'],
+        name: json['name'],
+        categoryId: json['categoryId'] ?? "Unknown",
+        category: json['Category'] != null ? Category.fromJson(json['Category']) : null,
+        fractions: fractionsList,
       );
+    } catch (e) {
+      return Item(id: "", name: 'Unknown', categoryId: "", category: null, fractions: []);
     }
-
-    return Item(
-      id: json['id'],
-      name: json['name'],
-      categoryId: json['categoryId'] ?? "Unknown",
-      category: json['Category'] != null
-          ? Category.fromJson(json['Category'])
-          : null,
-      fractions: fractionsList,
-    );
-  } catch (e) {
-    print('Error parsing Item from JSON: $e');
-    return Item(
-      id: "",
-      name: 'Unknown',
-      categoryId: "",
-      category: null,
-      fractions: [],
-    );
   }
-}
 
-  
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'name': name,
       'categoryId': categoryId,
+      if (fractions != null) 'fractions': fractions!.map((f) => f.toJson()).toList(),
     };
   }
 

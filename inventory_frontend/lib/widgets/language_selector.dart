@@ -16,34 +16,33 @@ class LanguageSelector extends StatelessWidget {
       onPressed: () {
         showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            title: Text(l10n?.language ?? 'Language'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.flag, color: Colors.blue),
-                  title: Text(l10n?.english ?? 'English'),
-                  onTap: () {
-                    languageProvider.setLanguage(const Locale('en'));
-                    print("language set to Amharic");
-                    Navigator.pop(context);
-                  },
+          builder:
+              (context) => AlertDialog(
+                title: Text(l10n?.language ?? 'Language'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.flag, color: Colors.blue),
+                      title: Text(l10n?.english ?? 'English'),
+                      onTap: () {
+                        languageProvider.setLanguage(const Locale('en'));
+                        Navigator.pop(context);
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.flag, color: Colors.green),
+                      title: Text(l10n?.amharic ?? 'አማርኛ'),
+                      onTap: () {
+                        languageProvider.setLanguage(const Locale('am'));
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ],
                 ),
-                ListTile(
-                  leading: const Icon(Icons.flag, color: Colors.green),
-                  title: Text(l10n?.amharic ?? 'አማርኛ'),
-                  onTap: () {
-                    languageProvider.setLanguage(const Locale('am'));
-                    print("language set to Amharic");
-                    Navigator.pop(context);
-                  },
-                ),
-              ],
-            ),
-          ),
+              ),
         );
       },
     );
   }
-} 
+}

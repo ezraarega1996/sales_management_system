@@ -4,8 +4,6 @@ import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:inventory_frontend/providers/shop_provider.dart';
 import 'package:inventory_frontend/models/shop.dart';
 import 'package:inventory_frontend/models/user.dart';
-import 'package:inventory_frontend/providers/available_item_provider.dart';
-import 'package:inventory_frontend/widgets/fraction_dropdown.dart';
 import 'package:inventory_frontend/screens/available_items_screen.dart';
 
 class ShopDetailScreen extends StatefulWidget {
@@ -25,7 +23,10 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadAvailableSalespeople();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAvailableSalespeople();
+    });
   }
 
   @override
@@ -42,10 +43,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
   Future<void> _assignSalesperson(User salesperson) async {
     final l10n = AppLocalizations.of(context)!;
     final shopProvider = Provider.of<ShopProvider>(context, listen: false);
-    final success = await shopProvider.assignSalespersonToShop(
-      widget.shop.id,
-      salesperson.id,
-    );
+    final success = await shopProvider.assignSalespersonToShop(widget.shop.id, salesperson.id);
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -57,10 +55,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
       setState(() {});
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(shopProvider.error ?? l10n.failedToAssignSalesperson),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text(shopProvider.error ?? l10n.failedToAssignSalesperson), backgroundColor: Colors.red),
       );
     }
   }
@@ -69,29 +64,24 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
     final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.removeSalespersonTitle),
-        content: Text(l10n.removeSalespersonContent(salesperson.name, widget.shop.name)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(l10n.cancel),
+      builder:
+          (context) => AlertDialog(
+            title: Text(l10n.removeSalespersonTitle),
+            content: Text(l10n.removeSalespersonContent(salesperson.name, widget.shop.name)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.cancel)),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: Text(l10n.remove),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: Text(l10n.remove),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
       final shopProvider = Provider.of<ShopProvider>(context, listen: false);
-      final success = await shopProvider.removeSalespersonFromShop(
-        widget.shop.id,
-        salesperson.id,
-      );
+      final success = await shopProvider.removeSalespersonFromShop(widget.shop.id, salesperson.id);
 
       if (success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -103,10 +93,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
         setState(() {});
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(shopProvider.error ?? l10n.failedToRemoveSalesperson),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(shopProvider.error ?? l10n.failedToRemoveSalesperson), backgroundColor: Colors.red),
         );
       }
     }
@@ -118,54 +105,44 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
     final availableSalespeople = shopProvider.availableSalespeople;
 
     if (availableSalespeople.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.noAvailableSalespeople),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.noAvailableSalespeople), backgroundColor: Colors.orange));
       return;
     }
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.assignSalespersonTitle),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: availableSalespeople.length,
-            itemBuilder: (context, index) {
-              final salesperson = availableSalespeople[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.blue.shade100,
-                  child: Text(
-                    salesperson.name[0].toUpperCase(),
-                    style: TextStyle(
-                      color: Colors.blue.shade700,
-                      fontWeight: FontWeight.bold,
+      builder:
+          (context) => AlertDialog(
+            title: Text(l10n.assignSalespersonTitle),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: availableSalespeople.length,
+                itemBuilder: (context, index) {
+                  final salesperson = availableSalespeople[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.blue.shade100,
+                      child: Text(
+                        salesperson.name[0].toUpperCase(),
+                        style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                ),
-                title: Text(salesperson.name),
-                subtitle: Text(salesperson.phone),
-                onTap: () {
-                  Navigator.pop(context);
-                  _assignSalesperson(salesperson);
+                    title: Text(salesperson.name),
+                    subtitle: Text(salesperson.phone),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _assignSalesperson(salesperson);
+                    },
+                  );
                 },
-              );
-            },
+              ),
+            ),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.cancel))],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.cancel),
-          ),
-        ],
-      ),
     );
   }
 
@@ -178,10 +155,13 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _isLoading ? null : () {
-              _loadAvailableSalespeople();
-              setState(() {});
-            },
+            onPressed:
+                _isLoading
+                    ? null
+                    : () {
+                      _loadAvailableSalespeople();
+                      setState(() {});
+                    },
           ),
         ],
       ),
@@ -205,10 +185,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                children: [
-                  _buildSalespeopleTab(context),
-                  AvailableItemsScreen(shopId: widget.shop.id),
-                ],
+                children: [_buildSalespeopleTab(context), AvailableItemsScreen(shopId: widget.shop.id)],
               ),
             ),
           ],
@@ -225,10 +202,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              l10n.salespeopleTab,
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
+            Text(l10n.salespeopleTab, style: Theme.of(context).textTheme.headlineSmall),
             ElevatedButton.icon(
               onPressed: _showAssignSalespersonDialog,
               icon: const Icon(Icons.person_add),
@@ -252,26 +226,13 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
                     padding: const EdgeInsets.all(32),
                     child: Column(
                       children: [
-                        Icon(
-                          Icons.people_outline,
-                          size: 48,
-                          color: Colors.grey.shade400,
-                        ),
+                        Icon(Icons.people_outline, size: 48, color: Colors.grey.shade400),
                         const SizedBox(height: 16),
-                        Text(
-                          l10n.noSalespeopleAssigned,
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
+                        Text(l10n.noSalespeopleAssigned, style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
                         const SizedBox(height: 8),
                         Text(
                           l10n.assignSalespeopleToShop,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade500,
-                          ),
+                          style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
                           textAlign: TextAlign.center,
                         ),
                       ],
@@ -293,10 +254,7 @@ class _ShopDetailScreenState extends State<ShopDetailScreen> with SingleTickerPr
                         backgroundColor: Colors.green.shade100,
                         child: Text(
                           salesperson.name[0].toUpperCase(),
-                          style: TextStyle(
-                            color: Colors.green.shade700,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.bold),
                         ),
                       ),
                       title: Text(salesperson.name),

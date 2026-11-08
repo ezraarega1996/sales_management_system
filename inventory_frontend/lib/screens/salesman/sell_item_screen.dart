@@ -6,20 +6,16 @@ import 'package:inventory_frontend/providers/sales_provider.dart';
 import 'package:inventory_frontend/providers/available_item_provider.dart';
 import 'package:inventory_frontend/providers/item_provider.dart';
 import 'package:inventory_frontend/providers/auth_provider.dart';
+import 'package:inventory_frontend/widgets/offline_banner.dart';
 import 'package:inventory_frontend/widgets/custom_button.dart';
 import 'package:inventory_frontend/widgets/custom_text_field.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class SellItemScreen extends StatefulWidget {
-
   final AvailableItem? preSelectedAvailableItem;
   final Fraction? preSelectedAvailableFraction;
-  
-  const SellItemScreen({
-    super.key,
-    this.preSelectedAvailableItem,
-    this.preSelectedAvailableFraction,
-  });
+
+  const SellItemScreen({super.key, this.preSelectedAvailableItem, this.preSelectedAvailableFraction});
 
   @override
   State<SellItemScreen> createState() => _SellItemScreenState();
@@ -30,7 +26,7 @@ class _SellItemScreenState extends State<SellItemScreen> {
   final _quantityController = TextEditingController();
   final _sellingPriceController = TextEditingController();
   final _purchasePriceController = TextEditingController();
-  
+
   AvailableItem? _selectedAvailableItem;
   Fraction? _selectedFraction;
   double _expectedAmount = 0;
@@ -49,7 +45,10 @@ class _SellItemScreenState extends State<SellItemScreen> {
   void initState() {
     super.initState();
     _initializeProviders();
-    _loadData();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
   }
 
   void _initializeProviders() {
@@ -58,31 +57,25 @@ class _SellItemScreenState extends State<SellItemScreen> {
     _itemProvider = Provider.of<ItemProvider>(context, listen: false);
   }
 
-  Future<void> _loadData() async {
+  /// Loads stock. Reuses data fetched in the last minute (e.g. when coming from the Available
+  /// Items list) unless [force] is set, and falls back to the saved copy when offline.
+  Future<void> _loadData({bool force = false}) async {
     if (!mounted) return;
+    final hasData = _availableItemProvider.availableItems.isNotEmpty;
     setState(() {
-      _isLoading = true;
+      _isLoading = !hasData;
       _error = null;
     });
-    try {
-      await Future.wait([
-        _availableItemProvider.fetchAvailableItems(),
-      ], eagerError: true);
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-      // Setup pre-selected values after data is loaded
-      _setupPreSelectedValues();
-      // Debug: print assigned items
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _error = 'Failed to load data. Please try again.';
-      });
-      debugPrint('Error loading data: $e');
-    }
+    await _availableItemProvider.fetchAvailableItems(force: force);
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+      // Only a problem if there is nothing (not even saved data) to sell from
+      if (_availableItemProvider.availableItems.isEmpty && _availableItemProvider.error != null) {
+        _error = AppLocalizations.of(context)!.loadFailedNoData;
+      }
+    });
+    _setupPreSelectedValues();
   }
 
   void _setupPreSelectedValues() {
@@ -90,9 +83,7 @@ class _SellItemScreenState extends State<SellItemScreen> {
     if (widget.preSelectedAvailableItem != null) {
       final assignedItems = _getAssignedItems();
       try {
-        final matching = assignedItems.firstWhere(
-          (item) => item.id == widget.preSelectedAvailableItem!.id,
-        );
+        final matching = assignedItems.firstWhere((item) => item.id == widget.preSelectedAvailableItem!.id);
         _selectedAvailableItem = matching;
       } catch (e) {
         // No match found, leave as null
@@ -103,9 +94,7 @@ class _SellItemScreenState extends State<SellItemScreen> {
       if (widget.preSelectedAvailableFraction != null) {
         final fractions = _selectedAvailableItem!.item?.fractions ?? [];
         try {
-          final matchingFraction = fractions.firstWhere(
-            (f) => f.id == widget.preSelectedAvailableFraction!.id,
-          );
+          final matchingFraction = fractions.firstWhere((f) => f.id == widget.preSelectedAvailableFraction!.id);
           _selectedFraction = matchingFraction;
           _updatePriceFields(matchingFraction);
           _updateExpectedAmount();
@@ -116,7 +105,7 @@ class _SellItemScreenState extends State<SellItemScreen> {
       }
     }
   }
-  
+
   @override
   void dispose() {
     _quantityController.dispose();
@@ -124,7 +113,7 @@ class _SellItemScreenState extends State<SellItemScreen> {
     _purchasePriceController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _fetchAvailableQuantity() async {
     if (_selectedAvailableItem == null || _selectedFraction == null) return;
 
@@ -135,15 +124,12 @@ class _SellItemScreenState extends State<SellItemScreen> {
       setState(() {
         _availableQuantity = double.parse(availableQuantity.toStringAsFixed(2));
       });
-      print("available quantity: $availableQuantity");      
-      print("available quantity state: $_availableQuantity");      
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = 'Failed to fetch available quantity. Please try again.';
         _availableQuantity = 0;
       });
-      debugPrint('Error fetching available quantity: $e');
     }
   }
 
@@ -188,35 +174,49 @@ class _SellItemScreenState extends State<SellItemScreen> {
       return;
     }
 
-    setState(() { _isSubmitting = true; });
+    setState(() {
+      _isSubmitting = true;
+    });
     try {
-      await _maybeUpdateFractionPrices(
-        sellingPrice,
-        purchasePrice,
+      final availableItem = _selectedAvailableItem!;
+      final fraction = _selectedFraction!;
+
+      // Only owners may change catalogue prices (the endpoint is owner-only); a salesman's
+      // edited price applies to this sale only. A failed price update never blocks the sale.
+      String? priceError;
+      if (context.read<AuthProvider>().isOwner) {
+        priceError = await _maybeUpdateFractionPrices(sellingPrice, purchasePrice);
+      }
+
+      // Saved on the phone immediately and sent in the background, so this works offline.
+      // Stock shown on screen is reduced right away; no need to re-download the stock list.
+      final confirmed = await _salesProvider.createSale(
+        {
+          'itemId': availableItem.item!.id,
+          'shopId': availableItem.shopId,
+          'fractionId': fraction.id,
+          'quantity': quantity,
+          'amount': _expectedAmount,
+          'profit': _profit,
+        },
+        availableItemId: availableItem.id,
+        units: quantity * fraction.ratio,
+        itemName: availableItem.item?.name ?? '',
+        fractionName: fraction.name,
       );
 
-      final success = await _salesProvider.createSale({
-        'itemId': _selectedAvailableItem!.item!.id,
-        'shopId': _selectedAvailableItem!.shopId,
-        'fractionId': _selectedFraction!.id,
-        'quantity': quantity,
-        'amount': _expectedAmount,
-        'profit': _profit,
-      });
-
       if (!mounted) return;
-
-      if (success) {
-        _showSuccessSnackBar(l10n.itemSoldSuccessfully);
-        _resetForm();
-        await Provider.of<AvailableItemProvider>(context, listen: false).fetchAvailableItems();
-      } else {
-        _showErrorSnackBar(_salesProvider.error ?? l10n.failedToProcessSale);
-      }
+      _showSuccessSnackBar(
+        priceError != null
+            ? l10n.priceNotUpdated(priceError)
+            : confirmed
+            ? l10n.itemSoldSuccessfully
+            : l10n.saleSavedOffline,
+      );
+      _resetForm();
     } catch (e) {
       if (!mounted) return;
       _showErrorSnackBar(l10n.failedToProcessSale);
-      debugPrint('Error processing sale: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -238,15 +238,11 @@ class _SellItemScreenState extends State<SellItemScreen> {
   }
 
   void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   List<AvailableItem> _getAssignedItems() {
@@ -275,14 +271,15 @@ class _SellItemScreenState extends State<SellItemScreen> {
     _updateExpectedAmount();
   }
 
-  Future<void> _maybeUpdateFractionPrices(double newSellingPrice, double newPurchasePrice) async {
+  /// Saves edited prices on the fraction (owners only). Returns an error message if that failed.
+  Future<String?> _maybeUpdateFractionPrices(double newSellingPrice, double newPurchasePrice) async {
     final fraction = _selectedFraction;
-    if (fraction == null) return;
+    if (fraction == null) return null;
 
     final sellingChanged = (newSellingPrice - fraction.sellingPrice).abs() > 0.0001;
     final purchaseChanged = (newPurchasePrice - fraction.purchasePrice).abs() > 0.0001;
 
-    if (!sellingChanged && !purchaseChanged) return;
+    if (!sellingChanged && !purchaseChanged) return null;
 
     final updated = await _itemProvider.updateFraction(
       fraction.id,
@@ -294,7 +291,7 @@ class _SellItemScreenState extends State<SellItemScreen> {
     );
 
     if (!updated) {
-      throw Exception('Failed to update fraction prices');
+      return _itemProvider.error ?? 'Failed to update prices';
     }
 
     setState(() {
@@ -308,6 +305,7 @@ class _SellItemScreenState extends State<SellItemScreen> {
         isUnit: fraction.isUnit,
       );
     });
+    return null;
   }
 
   void _handleFractionChange(Fraction? value) {
@@ -341,7 +339,6 @@ class _SellItemScreenState extends State<SellItemScreen> {
             _error = 'Failed to update available quantity';
           });
         }
-        debugPrint('Error in fraction change: $e');
       }
     });
   }
@@ -350,44 +347,46 @@ class _SellItemScreenState extends State<SellItemScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final isOwner = context.watch<AuthProvider>().isOwner;
+    // Rebuild when stock changes (refresh, or queued sales syncing in the background)
+    final assignedItems = context.watch<AvailableItemProvider>().availableItems;
+    final appBar = AppBar(title: Text(l10n.sellItem));
+
     if (_isLoading) {
-      return Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return Scaffold(appBar: appBar, body: const Center(child: CircularProgressIndicator()));
     }
 
-    if (_error != null) {
+    if (_error != null || assignedItems.isEmpty) {
       return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                _error!,
-                style: const TextStyle(color: Colors.red),
-                textAlign: TextAlign.center,
+        appBar: appBar,
+        body: Column(
+          children: [
+            const OfflineBanner(),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(_error != null ? Icons.cloud_off_rounded : Icons.inventory_2_outlined, size: 48),
+                      const SizedBox(height: 12),
+                      Text(
+                        _error ?? l10n.noItemsAssignedToYou,
+                        style: const TextStyle(fontSize: 16),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.icon(
+                        onPressed: () => _loadData(force: true),
+                        icon: const Icon(Icons.refresh),
+                        label: Text(l10n.retry),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadData,
-                child: Text(l10n.retry),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final availableItems = _availableItemProvider.availableItems;
-    final assignedItems = availableItems;
-
-    if (assignedItems.isEmpty) {
-      return Center(
-        child: Text(
-          l10n.noItemsAssignedToYou,
-          style: const TextStyle(fontSize: 18),
+            ),
+          ],
         ),
       );
     }
@@ -395,126 +394,126 @@ class _SellItemScreenState extends State<SellItemScreen> {
     final availableQuantity = _availableQuantity;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.sellItem),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              DropdownButtonFormField<AvailableItem>(
-                value: _selectedAvailableItem,
-                decoration: InputDecoration(
-                  labelText: l10n.selectItem,
-                  border: const OutlineInputBorder(),
-                ),
-                items: assignedItems.map((availableItem) {
-                  return DropdownMenuItem<AvailableItem>(
-                    value: availableItem,
-                    child: Text(availableItem.item!.name),
-                  );
-                }).toList(),
-                onChanged: _isSubmitting ? null : _handleItemChange,
-                validator: (value) => value == null ? l10n.pleaseSelectItem : null,
-              ),
-              const SizedBox(height: 16),
-              if (_selectedAvailableItem != null)
-                DropdownButtonFormField<Fraction>(
-                  value: _selectedFraction,
-                  decoration: InputDecoration(
-                    labelText: l10n.selectUnit,
-                    border: const OutlineInputBorder(),
+      appBar: appBar,
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () => _loadData(force: true),
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      DropdownButtonFormField<AvailableItem>(
+                        value: _selectedAvailableItem,
+                        decoration: InputDecoration(labelText: l10n.selectItem, border: const OutlineInputBorder()),
+                        items:
+                            assignedItems.map((availableItem) {
+                              return DropdownMenuItem<AvailableItem>(
+                                value: availableItem,
+                                child: Text(availableItem.item!.name),
+                              );
+                            }).toList(),
+                        onChanged: _isSubmitting ? null : _handleItemChange,
+                        validator: (value) => value == null ? l10n.pleaseSelectItem : null,
+                      ),
+                      const SizedBox(height: 16),
+                      if (_selectedAvailableItem != null)
+                        DropdownButtonFormField<Fraction>(
+                          value: _selectedFraction,
+                          decoration: InputDecoration(labelText: l10n.selectUnit, border: const OutlineInputBorder()),
+                          items:
+                              _selectedAvailableItem!.item!.fractions?.map((fraction) {
+                                return DropdownMenuItem<Fraction>(
+                                  value: fraction,
+                                  child: Text('${fraction.name} - \$${fraction.sellingPrice}'),
+                                );
+                              }).toList(),
+                          onChanged: _isSubmitting ? null : _handleFractionChange,
+                          validator: (value) => value == null ? l10n.pleaseSelectUnit : null,
+                        ),
+                      if (_selectedFraction != null) ...[
+                        const SizedBox(height: 16),
+                        CustomTextField(
+                          controller: _sellingPriceController,
+                          labelText: l10n.soldPriceLabel,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          enabled: !_isSubmitting,
+                          onChanged: (_) => _updateExpectedAmount(),
+                        ),
+                        if (isOwner) ...[
+                          const SizedBox(height: 16),
+                          CustomTextField(
+                            controller: _purchasePriceController,
+                            labelText: l10n.purchasePrice,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            enabled: !_isSubmitting,
+                          ),
+                        ],
+                      ],
+                      const SizedBox(height: 16),
+                      CustomTextField(
+                        controller: _quantityController,
+                        labelText: l10n.quantityLabel,
+                        keyboardType: TextInputType.number,
+                        onChanged: (_) => _updateExpectedAmount(),
+                        enabled: !_isSubmitting,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return l10n.pleaseEnterQuantity;
+                          }
+                          final quantity = double.tryParse(value);
+                          if (quantity == null) {
+                            return l10n.pleaseEnterValidNumber;
+                          }
+                          if (quantity <= 0) {
+                            return l10n.quantityMustBeGreaterThanZero;
+                          }
+                          if (quantity > availableQuantity) {
+                            return l10n.availableQuantityIs(availableQuantity);
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.availableQuantityWithLoading(availableQuantity.toString()),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        l10n.expectedAmountWithCurrency(_expectedAmount.toStringAsFixed(2)),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_selectedFraction != null && isOwner)
+                        Text(
+                          l10n.profitWithAmount('${l10n.currencySymbol}${_profit.toStringAsFixed(2)}'),
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),
+                        ),
+                      const SizedBox(height: 24),
+                      CustomButton(
+                        onPressed:
+                            _isSubmitting
+                                ? null
+                                : () {
+                                  _sellItem();
+                                },
+                        text: _isSubmitting ? l10n.processing : l10n.sellItem,
+                        isLoading: _isSubmitting,
+                      ),
+                    ],
                   ),
-                  items: _selectedAvailableItem!.item!.fractions?.map((fraction) {
-                    return DropdownMenuItem<Fraction>(
-                      value: fraction,
-                      child: Text('${fraction.name} - \$${fraction.sellingPrice}'),
-                    );
-                  }).toList(),
-                  onChanged: _isSubmitting ? null : _handleFractionChange,
-                  validator: (value) => value == null ? l10n.pleaseSelectUnit : null,
-                ),
-              if (_selectedFraction != null) ...[
-                const SizedBox(height: 16),
-                CustomTextField(
-                  controller: _sellingPriceController,
-                  labelText: l10n.soldPriceLabel,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  enabled: !_isSubmitting,
-                  onChanged: (_) => _updateExpectedAmount(),
-                ),
-                if (isOwner) ...[
-                  const SizedBox(height: 16),
-                  CustomTextField(
-                    controller: _purchasePriceController,
-                    labelText: l10n.purchasePrice,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    enabled: !_isSubmitting,
-                  ),
-                ],
-              ],
-              const SizedBox(height: 16),
-              CustomTextField(
-                controller: _quantityController,
-                labelText: l10n.quantityLabel,
-                keyboardType: TextInputType.number,
-                onChanged: (_) => _updateExpectedAmount(),
-                enabled: !_isSubmitting,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return l10n.pleaseEnterQuantity;
-                  }
-                  final quantity = double.tryParse(value);
-                  if (quantity == null) {
-                    return l10n.pleaseEnterValidNumber;
-                  }
-                  if (quantity <= 0) {
-                    return l10n.quantityMustBeGreaterThanZero;
-                  }
-                  if (quantity > availableQuantity) {
-                    return l10n.availableQuantityIs(availableQuantity);
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              Text(
-                l10n.availableQuantityWithLoading(availableQuantity.toString()),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                l10n.expectedAmountWithCurrency(_expectedAmount.toStringAsFixed(2)),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (_selectedFraction != null && isOwner)
-                Text(
-                  l10n.profitWithAmount('${l10n.currencySymbol}${_profit.toStringAsFixed(2)}'),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
-                  ),
-                ),
-              const SizedBox(height: 24),
-              CustomButton(
-                onPressed: _isSubmitting ? null : () { _sellItem(); },
-                text: _isSubmitting ? l10n.processing : l10n.sellItem,
-                isLoading: _isSubmitting,
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

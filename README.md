@@ -16,25 +16,25 @@ An inventory and sales management system that serves many businesses from one de
 ```
 projects/
 ├── inventory_backend/    # REST API (Node.js, Express, Sequelize, PostgreSQL)
-│   ├── config/           # Sequelize config, subscription plan definitions
+│   ├── config/           # Subscription plan definitions
 │   ├── controllers/      # Request handlers per resource
 │   ├── middleware/       # JWT auth / role checks
-│   ├── migrations/       # Sequelize migrations
-│   ├── models/           # Sequelize models + associations
+│   ├── models/           # Sequelize models + associations (schema synced on startup)
 │   ├── routes/           # Express routers mounted under /api
 │   ├── server.js         # App entry point
+│   ├── seed.js           # Sample data (npm run seed)
 │   ├── Dockerfile, docker-compose.yaml, render.yaml
 │   └── .env.example
 └── inventory_frontend/   # Flutter client
     ├── lib/
     │   ├── models/       # Dart data models
     │   ├── providers/    # State management (provider package)
-    │   ├── screens/      # admin/, owner/, salesman/, auth/, business/
-    │   ├── services/     # API services
-    │   ├── utils/        # API helper, storage, theme
+    │   ├── screens/      # admin/, owner/, salesman/, auth/
+    │   ├── services/     # Business API, offline sales queue
+    │   ├── utils/        # API client, offline cache, connection status, storage
     │   └── widgets/      # Reusable UI components
-    ├── assets/           # images, icons
-    └── .env.example
+    ├── assets/           # images
+    └── test/             # unit tests
 ```
 
 ## User roles and features
@@ -49,7 +49,7 @@ Other features:
 - Authentication with JWT, password change and reset
 - Per-shop stock ("available items") that purchases add to and sales take from
 - Sales summaries with date filters and charts (`fl_chart`)
-- PDF generation and printing, QR codes
+- Works on weak or no connection: salesmen keep selling offline (sales are queued on the phone and synced automatically), and screens show the last saved data
 - English and Amharic localization
 - Subscription plans with Stripe payments and webhooks
 
@@ -57,7 +57,9 @@ Other features:
 
 **Backend:** Node.js (ES modules), Express 4, Sequelize 6, PostgreSQL (`pg`), JWT (`jsonwebtoken`), bcrypt, Stripe, dotenv, nodemon.
 
-**Frontend:** Flutter (Dart SDK ^3.7.2), provider, http/dio, shared_preferences, flutter_secure_storage, jwt_decoder, fl_chart, pdf/printing, qr_flutter, image_picker, intl, flutter_dotenv, flutter_localizations.
+**Backend extras:** gzip `compression`.
+
+**Frontend:** Flutter (Dart SDK ^3.7.2), provider, http, shared_preferences (session, offline cache, sales queue), uuid, fl_chart, intl, url_launcher, flutter_localizations.
 
 ## API overview
 
@@ -65,7 +67,7 @@ All routes are mounted in [inventory_backend/server.js](inventory_backend/server
 
 | Prefix | Resource |
 |--------|----------|
-| `/api/auth` | Login, registration, password reset/change |
+| `/api/auth` | Login, change password |
 | `/api/users` | Users (owners, salesmen) |
 | `/api/businesses` | Businesses (tenants) |
 | `/api/shops` | Shops in a business |
@@ -73,8 +75,8 @@ All routes are mounted in [inventory_backend/server.js](inventory_backend/server
 | `/api/items` | Items |
 | `/api/fractions` | Sellable units/fractions of an item and their prices |
 | `/api/boughts` | Purchases (stock in) |
-| `/api/available-items` | Current stock per shop |
-| `/api/sales` | Sales (stock out) |
+| `/api/available-items` | Current stock per shop; `/:id/transactions` for one item's purchase/sale history |
+| `/api/sales` | Sales (stock out). `POST` is idempotent via a client-generated `clientId` |
 | `/api/payments` | Stripe subscription payments (`/webhook` uses the raw request body) |
 
 ## Data model
@@ -141,15 +143,25 @@ Environment variables (see [inventory_backend/.env.example](inventory_backend/.e
 
 ```bash
 cd inventory_frontend
-cp .env.example .env        # required: .env is bundled as an asset
 flutter pub get
-flutter run
+flutter run                                               # uses the default backend URL in lib/config.dart
+flutter run --dart-define=API_URL=https://api.example.com/api   # or point a build at another backend
 ```
+
+Run the tests with `flutter test`.
+
+## Working offline / weak connections
+
+- **Requests time out** (15 s reads, 20 s writes) instead of hanging; reads retry twice with backoff.
+- **Saved data:** every list the app loads is cached on the phone per user, so screens still show the last known data with an "Offline" banner.
+- **Sales queue** ([lib/services/sale_outbox.dart](inventory_frontend/lib/services/sale_outbox.dart)): a sale is saved on the phone first and stock on screen is reduced immediately. It is sent in the background right away, every 30 s while waiting, when the app is reopened, and when the connection returns. Each sale carries a `clientId`, so a retry after a lost response is never recorded twice. Sales the server rejects (e.g. not enough stock) are shown in Sales History with Retry/Discard.
+- **Smaller downloads:** the server gzips responses and `/available-items` no longer embeds the full history (about 66x smaller on the wire with the sample data).
 
 ## Known notes
 
-- `server.js` always listens on port **5000** and ignores `PORT`.
-- If `JWT_SECRET` or `DATABASE_URL` is missing, the server falls back to insecure development defaults.
-- The frontend's backend address is set in one place: `baseUrl` in [lib/config.dart](inventory_frontend/lib/config.dart). Both `Api` ([lib/utils/api.dart](inventory_frontend/lib/utils/api.dart)) and `BusinessService` read it.
+- The server listens on `PORT` (default 5000). If `JWT_SECRET` is missing it falls back to an insecure development default.
+- In production (`NODE_ENV=production`) the server only creates missing tables; schema changes such as the new `SoldItems.clientId` column must be applied to an existing production database manually.
+- The frontend's backend address is `baseUrl` in [lib/config.dart](inventory_frontend/lib/config.dart), overridable with `--dart-define=API_URL=...`. The default is a LAN IP, which only works on the same Wi-Fi.
+- The subscription screen calls `subscription/plans` and `subscription/checkout`, which the backend does not serve (it has `/payments/plans` and `/payments/create-checkout-session` with a different response shape).
 - The Render deploy ([render.yaml](inventory_backend/render.yaml)) deploys the `development` branch.
-- `.env` files are git-ignored. Copy them from the `.env.example` files.
+- `inventory_backend/.env` is git-ignored. Copy it from `.env.example`.

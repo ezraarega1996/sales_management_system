@@ -13,7 +13,7 @@ class LanguageProvider extends ChangeNotifier {
   Future<void> setLanguage(Locale locale) async {
     if (_locale != locale) {
       _locale = locale;
-      //await _prefs.setString(_languageKey, locale.languageCode);
+      await _prefs.setString(_languageKey, locale.languageCode);
       notifyListeners();
     }
   }
@@ -22,4 +22,4 @@ class LanguageProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     return LanguageProvider(prefs);
   }
-} 
+}

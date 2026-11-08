@@ -1,13 +1,24 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
-import 'package:inventory_frontend/models/sold_item.dart';
-import 'package:inventory_frontend/utils/api.dart';
 import 'package:inventory_frontend/models/sales_data.dart';
+import 'package:inventory_frontend/models/sold_item.dart';
+import 'package:inventory_frontend/services/sale_outbox.dart';
+import 'package:inventory_frontend/utils/api.dart';
 
 class SalesProvider with ChangeNotifier {
+  SalesProvider({SaleOutbox? outbox}) : _outbox = outbox ?? SaleOutbox.instance {
+    _outbox.addListener(notifyListeners);
+    _syncedSub = _outbox.synced.listen(_onSaleSynced);
+  }
+
+  final SaleOutbox _outbox;
+  late final StreamSubscription<SyncedSale> _syncedSub;
+
   List<SoldItem> _sales = [];
   bool _isLoading = false;
   String? _error;
+  bool _fromCache = false;
   Map<String, dynamic>? _dashboardStats;
   double? _totalSales;
   int? _totalItemsSold;
@@ -17,124 +28,23 @@ class SalesProvider with ChangeNotifier {
   List<SoldItem> get sales => [..._sales];
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isShowingSavedData => _fromCache;
   Map<String, dynamic>? get dashboardStats => _dashboardStats;
   double? get totalSales => _totalSales;
   int? get totalItemsSold => _totalItemsSold;
   double? get todaySales => _todaySales;
   List<SalesData> get todaySalesData => _todaySalesData;
 
-  Future<void> fetchSales() async {
+  /// Sales recorded on this phone that the server has not confirmed yet (including failed ones).
+  List<PendingSale> get unsyncedSales => [..._outbox.failed, ..._outbox.pending.reversed];
+
+  /// Runs [load], tracking loading/error state. On failure the previous data stays visible.
+  Future<void> _run(Future<void> Function() load) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
-
     try {
-      final response = await Api.get("sales");
-      print('Sales response: $response'); // Debug print
-
-      if (response != null) {
-        _sales = List<SoldItem>.from(response.map((x) => SoldItem.fromJson(x)));
-        // Sort sales by date, most recent first
-        _sales.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        _totalItemsSold = _sales.length;
-        _totalSales = _sales.fold<double>(0.0, (sum, item) => sum + item.soldPrice);
-        print('Fetched ${_sales.length} sales records'); // Debug print
-      } else {
-        _error = 'No sales data received';
-        _sales = [];
-      }
-    } catch (e) {
-      print('Error fetching sales: $e'); // Debug print
-      _error = e.toString();
-      _sales = [];
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> fetchTodaySales() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final response = await Api.get('available-items/today-sales');
-      print('Today sales response: $response'); // Debug print
-      
-      if (response != null && response is Map<String, dynamic>) {
-        _todaySales = (response['totalSales'] ?? 0).toDouble();
-        print('Total sales: $_todaySales'); // Debug print
-        
-        if (response['salesBySalesman'] != null) {
-          _todaySalesData = (response['salesBySalesman'] as List)
-              .map((json) => SalesData.fromJson(json))
-              .toList();
-          print('Sales by salesman: $_todaySalesData'); // Debug print
-        } else {
-          _todaySalesData = [];
-        }
-      } else {
-        _error = 'Invalid response format';
-        _todaySalesData = [];
-      }
-    } catch (e) {
-      print('Error in fetchTodaySales: $e'); // Debug print
-      _error = e.toString();
-      _todaySalesData = [];
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> fetchUserSales() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final response = await Api.get('sales/user');
-
-      _sales = List<SoldItem>.from(response.map((x) => SoldItem.fromJson(x)));
-
-      _isLoading = false;
-      notifyListeners();
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> fetchDashboardStats() async {
-    print('Fetching dashboard stats...');
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-
-      final response = await Api.get('sales/dashboard');
-      if (response != null) {
-        _totalSales = response['totalSales']?.toDouble();
-        _totalItemsSold = response['salesCount'];
-
-        _dashboardStats = response;
-        if (response['sales'] is List) {
-          _sales = List<SoldItem>.from(
-            (response['sales'] as List).map((x) => SoldItem.fromJson(x)),
-          );
-        } else {
-          _sales = [];
-        }
-        _sales.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-        // JSON numbers without a fraction (e.g. 4955) decode as int, so convert via num
-        _todaySales = (response['todaySales'] as num?)?.toDouble();
-      } else {
-        _error = 'Failed to fetch dashboard stats';
-      }
+      await load();
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -143,122 +53,98 @@ class SalesProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> createSale(Map<String, dynamic> saleData) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final response = await Api.post('sales', saleData);
-
-      if (response == null) {
-        _error = 'No response received from server';
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
-
-      final newSale = SoldItem.fromJson(response);
-      _sales.insert(0, newSale);
-
-      _isLoading = false;
-      notifyListeners();
-
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
+  List<SoldItem> _parseSales(dynamic data) {
+    final sales = (data as List).map((x) => SoldItem.fromJson(x)).toList();
+    sales.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return sales;
   }
 
-  Future<bool> updateSale(String id, Map<String, dynamic> saleData) async {
-    _isLoading = true;
-    _error = null;
+  Future<void> fetchSales() => _run(() async {
+    final response = await Api.getCached('sales');
+    _sales = _parseSales(response.data);
+    _fromCache = response.fromCache;
+    _totalItemsSold = _sales.length;
+    _totalSales = _sales.fold<double>(0.0, (sum, item) => sum + item.soldPrice);
+  });
+
+  Future<void> fetchUserSales() => _run(() async {
+    final response = await Api.getCached('sales/user');
+    _sales = _parseSales(response.data);
+    _fromCache = response.fromCache;
+  });
+
+  Future<void> fetchTodaySales() => _run(() async {
+    final response = await Api.getCached('available-items/today-sales');
+    final data = response.data as Map<String, dynamic>;
+    _todaySales = (data['totalSales'] as num?)?.toDouble() ?? 0;
+    _todaySalesData = ((data['salesBySalesman'] as List?) ?? const []).map((json) => SalesData.fromJson(json)).toList();
+  });
+
+  Future<void> fetchDashboardStats() => _run(() async {
+    final response = await Api.getCached('sales/dashboard');
+    final data = response.data as Map<String, dynamic>;
+    _dashboardStats = data;
+    _fromCache = response.fromCache;
+    // JSON numbers without a fraction (e.g. 4955) decode as int, so convert via num
+    _totalSales = (data['totalSales'] as num?)?.toDouble();
+    _totalItemsSold = (data['salesCount'] as num?)?.toInt();
+    _todaySales = (data['todaySales'] as num?)?.toDouble();
+  });
+
+  /// Records a sale offline-first: it is saved on the phone immediately and sent to the server
+  /// in the background (now, or when the connection comes back).
+  ///
+  /// Waits up to [confirmWithin] for the server; returns true if it confirmed the sale in that
+  /// time, false if the sale is safely queued on the phone and will sync later.
+  Future<bool> createSale(
+    Map<String, dynamic> saleData, {
+    required String availableItemId,
+    required double units,
+    required String itemName,
+    required String fractionName,
+    Duration confirmWithin = const Duration(seconds: 3),
+  }) async {
+    final sale = await _outbox.enqueue(
+      payload: saleData,
+      availableItemId: availableItemId,
+      units: units,
+      itemName: itemName,
+      fractionName: fractionName,
+    );
+    await _outbox.sync().timeout(confirmWithin, onTimeout: () => 0);
+    return !_outbox.pending.any((s) => s.clientId == sale.clientId);
+  }
+
+  Future<void> syncNow() => _outbox.sync();
+  Future<void> retryUnsynced(String clientId) => _outbox.retry(clientId);
+  Future<void> discardUnsynced(String clientId) => _outbox.discard(clientId);
+
+  void _onSaleSynced(SyncedSale synced) {
+    if (synced.serverSale is! Map<String, dynamic>) return;
+    final sale = SoldItem.fromJson(synced.serverSale as Map<String, dynamic>);
+    if (_sales.any((s) => s.id == sale.id)) return;
+    _sales.insert(0, sale);
     notifyListeners();
-
-    try {
-      final response = await Api.put('sales/$id', saleData);
-
-      final updatedSale = SoldItem.fromJson(response);
-      final index = _sales.indexWhere((sale) => sale.id == id);
-
-      if (index != -1) {
-        _sales[index] = updatedSale;
-      }
-
-      _isLoading = false;
-      notifyListeners();
-
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
   }
 
   Future<bool> deleteSale(String id) async {
-    _isLoading = true;
     _error = null;
-    notifyListeners();
-
     try {
       await Api.delete('sales/$id');
-
       _sales.removeWhere((sale) => sale.id == id);
-
-      _isLoading = false;
       notifyListeners();
-
       return true;
     } catch (e) {
       _error = e.toString();
-      _isLoading = false;
       notifyListeners();
       return false;
     }
   }
 
-  Future<double> getAvailableQuantity(String itemId, String fractionId) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final response = await Api.get(
-        'sales/available-quantity/calculate?itemId=$itemId&fractionId=$fractionId',
-      );
-
-      print('Available quantity response: $response'); // Debug log
-
-      if (response == null) {
-        throw Exception('No response from server');
-      }
-
-      if (response is Map<String, dynamic> && response.containsKey('availableQuantity')) {
-        final quantity = response['availableQuantity'];
-        if (quantity is num) {
-          _isLoading = false;
-          notifyListeners();
-          return quantity.toDouble();
-        }
-      }
-
-      throw Exception('Invalid response format');
-    } catch (e) {
-      print('Error in getAvailableQuantity: $e'); // Debug log
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      return 0.0;
-    }
-  }
-
-  void clearError() {
-    _error = null;
-    notifyListeners();
+  @override
+  void dispose() {
+    _outbox.removeListener(notifyListeners);
+    _syncedSub.cancel();
+    super.dispose();
   }
 }

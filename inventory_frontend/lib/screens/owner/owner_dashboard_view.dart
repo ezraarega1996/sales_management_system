@@ -11,6 +11,7 @@ import 'package:inventory_frontend/providers/auth_provider.dart';
 import 'package:inventory_frontend/providers/business_provider.dart';
 import 'package:inventory_frontend/providers/sales_provider.dart';
 import 'package:inventory_frontend/widgets/dashboard_chart.dart';
+import 'package:inventory_frontend/widgets/offline_banner.dart';
 
 /// Indexes of the owner screens, as used by OwnerDashboard's drawer.
 class OwnerTab {
@@ -24,12 +25,7 @@ class OwnerDashboardView extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final ValueChanged<int> onNavigate;
 
-  const OwnerDashboardView({
-    super.key,
-    required this.isLoading,
-    required this.onRefresh,
-    required this.onNavigate,
-  });
+  const OwnerDashboardView({super.key, required this.isLoading, required this.onRefresh, required this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -44,10 +40,7 @@ class OwnerDashboardView extends StatelessWidget {
     if (isLoading && stats == null) {
       children = [
         _Header(business: business, userName: userName, stats: null, fmt: fmt),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 48),
-          child: Center(child: CircularProgressIndicator()),
-        ),
+        const Padding(padding: EdgeInsets.symmetric(vertical: 48), child: Center(child: CircularProgressIndicator())),
       ];
     } else if (sales.error != null && stats == null) {
       children = [
@@ -74,24 +67,42 @@ class OwnerDashboardView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        _ShopsCard(shops: (s['salesByShop'] as List?) ?? const [], fmt: fmt, onViewAll: () => onNavigate(OwnerTab.shops)),
+        _ShopsCard(
+          shops: (s['salesByShop'] as List?) ?? const [],
+          fmt: fmt,
+          onViewAll: () => onNavigate(OwnerTab.shops),
+        ),
         const SizedBox(height: 16),
         _SalesmenCard(data: sales.todaySalesData, fmt: fmt),
         const SizedBox(height: 16),
-        _TopItemsCard(items: (s['topItems'] as List?) ?? const [], fmt: fmt, onViewAll: () => onNavigate(OwnerTab.sales)),
+        _TopItemsCard(
+          items: (s['topItems'] as List?) ?? const [],
+          fmt: fmt,
+          onViewAll: () => onNavigate(OwnerTab.sales),
+        ),
         const SizedBox(height: 16),
-        _LowStockCard(items: (s['lowStock'] as List?) ?? const [], onViewAll: () => onNavigate(OwnerTab.availableItems)),
+        _LowStockCard(
+          items: (s['lowStock'] as List?) ?? const [],
+          onViewAll: () => onNavigate(OwnerTab.availableItems),
+        ),
         const SizedBox(height: 24),
       ];
     }
 
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        children: children,
-      ),
+    return Column(
+      children: [
+        const OfflineBanner(),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: onRefresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              children: children,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -150,9 +161,10 @@ class _Header extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final scheme = Theme.of(context).colorScheme;
     final hour = DateTime.now().hour;
-    final greeting = hour < 12
-        ? l10n.dashGoodMorning
-        : hour < 17
+    final greeting =
+        hour < 12
+            ? l10n.dashGoodMorning
+            : hour < 17
             ? l10n.dashGoodAfternoon
             : l10n.dashGoodEvening;
     final firstName = userName?.split(' ').first;
@@ -313,7 +325,10 @@ class _SectionCard extends StatelessWidget {
                     children: [
                       Text(title, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                       if (subtitle != null)
-                        Text(subtitle!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                        Text(
+                          subtitle!,
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        ),
                     ],
                   ),
                 ),
@@ -355,9 +370,24 @@ class _AllTimeCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              _Metric(label: l10n.dashRevenue, value: fmt.money(stats['totalSales']), icon: Icons.payments_outlined, color: scheme.primary),
-              _Metric(label: l10n.dashProfit, value: fmt.money(stats['totalProfit']), icon: Icons.savings_outlined, color: Colors.green.shade700),
-              _Metric(label: l10n.dashTransactions, value: '${stats['salesCount'] ?? 0}', icon: Icons.shopping_bag_outlined, color: scheme.tertiary),
+              _Metric(
+                label: l10n.dashRevenue,
+                value: fmt.money(stats['totalSales']),
+                icon: Icons.payments_outlined,
+                color: scheme.primary,
+              ),
+              _Metric(
+                label: l10n.dashProfit,
+                value: fmt.money(stats['totalProfit']),
+                icon: Icons.savings_outlined,
+                color: Colors.green.shade700,
+              ),
+              _Metric(
+                label: l10n.dashTransactions,
+                value: '${stats['salesCount'] ?? 0}',
+                icon: Icons.shopping_bag_outlined,
+                color: scheme.tertiary,
+              ),
             ],
           ),
           if (change != null) ...[
@@ -457,36 +487,42 @@ class _ShopsCard extends StatelessWidget {
       title: l10n.dashSalesByShop,
       subtitle: l10n.dashLast30Days,
       onViewAll: onViewAll,
-      child: shops.isEmpty
-          ? _Empty(text: l10n.noData)
-          : Column(
-              children: [
-                for (final s in shops)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.storefront_outlined, size: 18, color: theme.colorScheme.primary),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text('${s['shopName']}', style: const TextStyle(fontWeight: FontWeight.w600))),
-                            Text(fmt.money(s['total']), style: const TextStyle(fontWeight: FontWeight.w700)),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        _ShareBar(fraction: total > 0 ? _num(s['total']) / total : 0, color: theme.colorScheme.primary),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${l10n.dashSalesCount('${s['count']}')} · ${total > 0 ? (_num(s['total']) / total * 100).toStringAsFixed(0) : 0}%',
-                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                        ),
-                      ],
+      child:
+          shops.isEmpty
+              ? _Empty(text: l10n.noData)
+              : Column(
+                children: [
+                  for (final s in shops)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.storefront_outlined, size: 18, color: theme.colorScheme.primary),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text('${s['shopName']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                              ),
+                              Text(fmt.money(s['total']), style: const TextStyle(fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          _ShareBar(
+                            fraction: total > 0 ? _num(s['total']) / total : 0,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${l10n.dashSalesCount('${s['count']}')} · ${total > 0 ? (_num(s['total']) / total * 100).toStringAsFixed(0) : 0}%',
+                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-              ],
-            ),
+                ],
+              ),
     );
   }
 }
@@ -506,45 +542,47 @@ class _SalesmenCard extends StatelessWidget {
 
     return _SectionCard(
       title: l10n.todaysSalesBySalesman,
-      child: ranked.isEmpty
-          ? _Empty(text: l10n.noSalesToday)
-          : Column(
-              children: [
-                for (var i = 0; i < ranked.length; i++)
-                  Padding(
-                    padding: EdgeInsets.only(bottom: i == ranked.length - 1 ? 0 : 10),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundColor: i < 3 ? medals[i].withValues(alpha: 0.2) : theme.colorScheme.surfaceContainerHighest,
-                          child: Text(
-                            ranked[i].salesmanName.isNotEmpty ? ranked[i].salesmanName[0].toUpperCase() : '?',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: i < 3 ? medals[i] : theme.colorScheme.onSurfaceVariant,
+      child:
+          ranked.isEmpty
+              ? _Empty(text: l10n.noSalesToday)
+              : Column(
+                children: [
+                  for (var i = 0; i < ranked.length; i++)
+                    Padding(
+                      padding: EdgeInsets.only(bottom: i == ranked.length - 1 ? 0 : 10),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 18,
+                            backgroundColor:
+                                i < 3 ? medals[i].withValues(alpha: 0.2) : theme.colorScheme.surfaceContainerHighest,
+                            child: Text(
+                              ranked[i].salesmanName.isNotEmpty ? ranked[i].salesmanName[0].toUpperCase() : '?',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: i < 3 ? medals[i] : theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(ranked[i].salesmanName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              Text(
-                                l10n.dashSalesCount('${ranked[i].totalTransactions}'),
-                                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                              ),
-                            ],
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(ranked[i].salesmanName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                Text(
+                                  l10n.dashSalesCount('${ranked[i].totalTransactions}'),
+                                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        Text(fmt.money(ranked[i].totalAmount), style: const TextStyle(fontWeight: FontWeight.w700)),
-                      ],
+                          Text(fmt.money(ranked[i].totalAmount), style: const TextStyle(fontWeight: FontWeight.w700)),
+                        ],
+                      ),
                     ),
-                  ),
-              ],
-            ),
+                ],
+              ),
     );
   }
 }
@@ -565,56 +603,60 @@ class _TopItemsCard extends StatelessWidget {
     return _SectionCard(
       title: l10n.topSellingItems,
       onViewAll: onViewAll,
-      child: items.isEmpty
-          ? _Empty(text: l10n.noItemsFound)
-          : Column(
-              children: [
-                for (var i = 0; i < items.length; i++)
-                  Padding(
-                    padding: EdgeInsets.only(bottom: i == items.length - 1 ? 0 : 12),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: 24,
-                          child: Text(
-                            '${i + 1}',
-                            style: TextStyle(fontWeight: FontWeight.w800, color: theme.colorScheme.primary),
+      child:
+          items.isEmpty
+              ? _Empty(text: l10n.noItemsFound)
+              : Column(
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    Padding(
+                      padding: EdgeInsets.only(bottom: i == items.length - 1 ? 0 : 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            child: Text(
+                              '${i + 1}',
+                              style: TextStyle(fontWeight: FontWeight.w800, color: theme.colorScheme.primary),
+                            ),
                           ),
-                        ),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '${items[i]['Item']?['name'] ?? '-'}',
-                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '${items[i]['Item']?['name'] ?? '-'}',
+                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                      ),
                                     ),
-                                  ),
-                                  Text(fmt.money(items[i]['totalAmount']), style: const TextStyle(fontWeight: FontWeight.w700)),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              _ShareBar(
-                                fraction: best > 0 ? _num(items[i]['totalAmount']) / best : 0,
-                                color: theme.colorScheme.tertiary,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                l10n.dashSold(fmt.qty(items[i]['totalQuantity'])),
-                                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                              ),
-                            ],
+                                    Text(
+                                      fmt.money(items[i]['totalAmount']),
+                                      style: const TextStyle(fontWeight: FontWeight.w700),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                _ShareBar(
+                                  fraction: best > 0 ? _num(items[i]['totalAmount']) / best : 0,
+                                  color: theme.colorScheme.tertiary,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  l10n.dashSold(fmt.qty(items[i]['totalQuantity'])),
+                                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-              ],
-            ),
+                ],
+              ),
     );
   }
 }
@@ -634,48 +676,57 @@ class _LowStockCard extends StatelessWidget {
     return _SectionCard(
       title: l10n.dashLowStock,
       onViewAll: onViewAll,
-      child: items.isEmpty
-          ? _Empty(text: l10n.dashLowStockEmpty, icon: Icons.check_circle_outline)
-          : Column(
-              children: [
-                for (final item in items)
-                  Builder(builder: (context) {
-                    final qty = _num(item['quantity']);
-                    final critical = qty <= 10;
-                    final color = critical ? theme.colorScheme.error : Colors.orange.shade800;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(critical ? Icons.error_outline : Icons.warning_amber_rounded, color: color, size: 20),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('${item['itemName']}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                Text(
-                                  '${item['shopName']}',
-                                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      child:
+          items.isEmpty
+              ? _Empty(text: l10n.dashLowStockEmpty, icon: Icons.check_circle_outline)
+              : Column(
+                children: [
+                  for (final item in items)
+                    Builder(
+                      builder: (context) {
+                        final qty = _num(item['quantity']);
+                        final critical = qty <= 10;
+                        final color = critical ? theme.colorScheme.error : Colors.orange.shade800;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                critical ? Icons.error_outline : Icons.warning_amber_rounded,
+                                color: color,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('${item['itemName']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    Text(
+                                      '${item['shopName']}',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                              Text(
+                                l10n.dashLeft(qtyFmt.format(qty), '${item['unit'] ?? ''}'),
+                                style: TextStyle(color: color, fontWeight: FontWeight.w700),
+                              ),
+                            ],
                           ),
-                          Text(
-                            l10n.dashLeft(qtyFmt.format(qty), '${item['unit'] ?? ''}'),
-                            style: TextStyle(color: color, fontWeight: FontWeight.w700),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-              ],
-            ),
+                        );
+                      },
+                    ),
+                ],
+              ),
     );
   }
 }

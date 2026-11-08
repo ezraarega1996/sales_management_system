@@ -39,8 +39,11 @@ class _FilteredSalesHistoryScreenState extends State<FilteredSalesHistoryScreen>
   @override
   void initState() {
     super.initState();
-    _loadSales();
-    _loadSellContext();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSales();
+      _loadSellContext();
+    });
   }
 
   Future<void> _loadSellContext() async {

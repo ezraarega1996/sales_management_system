@@ -36,6 +36,7 @@ class AvailableItem {
       if (value is String) return double.tryParse(value) ?? 0.0;
       return 0.0;
     }
+
     return AvailableItem(
       id: json['id'],
       itemId: json['itemId'],
@@ -44,16 +45,14 @@ class AvailableItem {
       quantity: parseDouble(json['quantity']),
       soldPrice: parseDouble(json['soldPrice']),
       item: json['item'] != null ? Item.fromJson(json['item']) : null,
-      boughtTransactions: json['boughtTransactions'] != null
-          ? (json['boughtTransactions'] as List)
-              .map((e) => ItemBought.fromJson(e))
-              .toList()
-          : null,
-      soldTransactions: json['soldTransactions'] != null
-          ? (json['soldTransactions'] as List)
-              .map((e) => SoldItem.fromJson(e))
-              .toList()
-          : null,
+      boughtTransactions:
+          json['boughtTransactions'] != null
+              ? (json['boughtTransactions'] as List).map((e) => ItemBought.fromJson(e)).toList()
+              : null,
+      soldTransactions:
+          json['soldTransactions'] != null
+              ? (json['soldTransactions'] as List).map((e) => SoldItem.fromJson(e)).toList()
+              : null,
       shop: json['shop'] != null ? Shop.fromJson(json['shop']) : null,
     );
   }
@@ -73,8 +72,27 @@ class AvailableItem {
     };
   }
 
+  /// Same stock row with a different quantity (used to show sales not yet synced).
+  AvailableItem withQuantity(double newQuantity) => AvailableItem(
+    id: id,
+    itemId: itemId,
+    businessId: businessId,
+    shopId: shopId,
+    quantity: newQuantity,
+    soldPrice: soldPrice,
+    item: item,
+    boughtTransactions: boughtTransactions,
+    soldTransactions: soldTransactions,
+    shop: shop,
+  );
+
+  // Identity is the stock row id, so dropdowns keep their selection when the list is refreshed
   @override
-  String toString() {
-    return 'AvailableItem(id: $id, itemId: $itemId, businessId: $businessId, quantity: $quantity, soldPrice: $soldPrice, item: $item, boughtTransactions: $boughtTransactions, soldTransactions: $soldTransactions, shop: $shop)';
-  }
-} 
+  bool operator ==(Object other) => other is AvailableItem && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() => 'AvailableItem(id: $id, itemId: $itemId, quantity: $quantity)';
+}

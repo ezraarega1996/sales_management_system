@@ -32,12 +32,11 @@ class _ItemsScreenState extends State<ItemsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAll();
-    if (widget.autoOpenAdd) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _showAddEditDialog();
-      });
-    }
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAll();
+      if (widget.autoOpenAdd && mounted) _showAddEditDialog();
+    });
   }
 
   @override

@@ -752,5 +752,19 @@
     "dashSold": "{quantity} ተሽጧል",
     "dashPlan": "{plan} እቅድ",
     "dashSalesCount": "{count} ሽያጮች",
-    "dashViewAll": "ሁሉንም ይመልከቱ"
+    "dashViewAll": "ሁሉንም ይመልከቱ",
+    "offlineSavedData": "ከመስመር ውጭ · የተቀመጠ መረጃ እየታየ ነው",
+    "salesWaitingToSync": "{count, plural, =1{1 ሽያጭ ለማመሳሰል በመጠባበቅ ላይ} other{{count} ሽያጮች ለማመሳሰል በመጠባበቅ ላይ}}",
+    "salesFailedToSync": "{count, plural, =1{1 ሽያጭ መመዝገብ አልተቻለም} other{{count} ሽያጮች መመዝገብ አልተቻለም}}",
+    "syncNow": "አሁን አመሳስል",
+    "waitingToSync": "ለማመሳሰል በመጠባበቅ ላይ",
+    "notRecordedReason": "አልተመዘገበም፡ {reason}",
+    "discardSale": "ሰርዝ",
+    "unsyncedSales": "ገና ያልተመሳሰሉ",
+    "unsyncedLogoutTitle": "ያልተመሳሰሉ ሽያጮች አሉ",
+    "unsyncedLogoutBody": "{count, plural, =1{1 ሽያጭ በዚህ ስልክ ላይ ተቀምጧል ግን ገና አልተላከም። በዚህ ስልክ ላይ በሚቀጥለው ጊዜ ሲገቡ ይላካል።} other{{count} ሽያጮች በዚህ ስልክ ላይ ተቀምጠዋል ግን ገና አልተላኩም። በዚህ ስልክ ላይ በሚቀጥለው ጊዜ ሲገቡ ይላካሉ።}}",
+    "logoutAnyway": "ለማንኛውም ውጣ",
+    "saleSavedOffline": "ሽያጩ በስልኩ ላይ ተቀምጧል። ግንኙነት ሲመለስ ይመሳሰላል።",
+    "priceNotUpdated": "ሽያጩ ተመዝግቧል፣ ግን አዲሱ ዋጋ አልተቀመጠም፡ {reason}",
+    "loadFailedNoData": "መረጃ መጫን አልተቻለም። ግንኙነትዎን ያረጋግጡ እና እንደገና ይሞክሩ።"
 }

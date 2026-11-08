@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:intl/intl.dart';
-import 'package:inventory_frontend/models/fraction.dart';
 import 'package:provider/provider.dart';
+
+import 'package:inventory_frontend/models/fraction.dart';
+import 'package:inventory_frontend/models/sold_item.dart';
 import 'package:inventory_frontend/providers/sales_provider.dart';
 import 'package:inventory_frontend/screens/salesman/sale_detail_screen.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:inventory_frontend/services/sale_outbox.dart';
+import 'package:inventory_frontend/widgets/offline_banner.dart';
 
 class ViewSalesScreen extends StatefulWidget {
   const ViewSalesScreen({super.key});
@@ -15,48 +19,24 @@ class ViewSalesScreen extends StatefulWidget {
 
 class _ViewSalesScreenState extends State<ViewSalesScreen> {
   final Map<String, String> _selectedFractionIds = {}; // saleId -> fractionId
+  final _dateFormat = DateFormat('MMM dd, yyyy HH:mm');
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadSales();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSales();
+    });
   }
-  
+
   Future<void> _loadSales() async {
     if (!mounted) return;
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final salesProvider = context.read<SalesProvider>();
-      await salesProvider.fetchUserSales();
-    } catch (e) {
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.errorLoadingSales(e.toString()))),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-  
-  void _viewSaleDetails(int index) {
     final salesProvider = context.read<SalesProvider>();
-    final sale = salesProvider.sales[index];
-    
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => SaleDetailScreen(sale: sale),
-      ),
-    );
+    setState(() => _isLoading = salesProvider.sales.isEmpty);
+    await salesProvider.fetchUserSales();
+    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
@@ -65,118 +45,172 @@ class _ViewSalesScreenState extends State<ViewSalesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.salesHistory),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _isLoading ? null : () {
-              // ignore: unawaited_futures
-              _loadSales();
-            },
-          ),
-        ],
+        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _isLoading ? null : _loadSales)],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Consumer<SalesProvider>(
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child: Consumer<SalesProvider>(
               builder: (context, salesProvider, child) {
-                final dateFormat = DateFormat('MMM dd, yyyy HH:mm');
-                final today = DateTime.now();
+                if (_isLoading) return const Center(child: CircularProgressIndicator());
 
-                return Stack(
-                  children: [
-                    RefreshIndicator(
-                      onRefresh: _loadSales,
-                      child: salesProvider.sales.isEmpty
-                          ? Center(child: Text(l10n.noSalesFound))
-                          : ListView.builder(
-                              itemCount: salesProvider.sales.length,
-                              itemBuilder: (context, index) {
-                                final sale = salesProvider.sales[index];
-                                final itemFractions = sale.item?.fractions ?? [];
-                                String selectedFractionId = _selectedFractionIds[sale.id] ?? sale.fraction?.id ?? '';
-                                final selectedFraction = itemFractions.firstWhere(
-                                  (f) => f.id == selectedFractionId,
-                                  orElse: () => itemFractions.isNotEmpty
-                                      ? itemFractions.first
-                                      : Fraction(
-                                          id: '',
-                                          name: '',
-                                          ratio: 1,
-                                          sellingPrice: 0,
-                                          purchasePrice: 0,
-                                          itemId: '',
-                                        ),
-                                );
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  child: ListTile(
-                                    title: Text(sale.item?.name ?? l10n.unknownItem),
-                                    subtitle: Row(    
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        // Sale details on the left
-                                        Expanded(
-                                          flex: 2,
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text('${sale.item?.name}(${sale.salesman?.name ?? l10n.unknownSalesman})'),
-                                              Text(l10n.quantityWithUnit(
-                                                (sale.quantity * sale.fraction!.ratio / selectedFraction.ratio).toString(),
-                                                selectedFraction.name,
-                                              )),
-                                              Text(l10n.amountWithCurrency(sale.soldPrice.toString())),
-                                              if (sale.profit != null)
-                                                Text(
-                                                  l10n.profitWithAmount('\$${sale.profit!.toStringAsFixed(2)}'),
-                                                  style: const TextStyle(fontWeight: FontWeight.w600),
-                                                ),
-                                              sale.available_items_count != null
-                                                ? Text(l10n.availableItemsWithUnit(
-                                                    (sale.available_items_count! * sale.fraction!.ratio / selectedFraction.ratio).toString(),
-                                                    selectedFraction.name,
-                                                  ))
-                                                : const SizedBox.shrink(),
-                                              Text(l10n.dateWithFormat(dateFormat.format(sale.createdAt))),
-                                            ],
-                                          ),
-                                        ),
-                                        // Dropdown on the right
-                                        if ((sale.item?.fractions ?? []).isNotEmpty)
-                                          Expanded(
-                                            flex: 1,
-                                            child: Align(
-                                              alignment: Alignment.topRight,
-                                              child: DropdownButton<String>(
-                                                value: selectedFractionId,
-                                                items: sale.item!.fractions!.map((fraction) {
-                                                  return DropdownMenuItem<String>(
-                                                    value: fraction.id,
-                                                    child: Text(fraction.name),
-                                                  );
-                                                }).toList(),
-                                                onChanged: (value) {
-                                                  setState(() {
-                                                    _selectedFractionIds[sale.id] = value!;
-                                                  });
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    trailing: const Icon(Icons.arrow_forward_ios),
-                                    onTap: () => _viewSaleDetails(index),
-                                    isThreeLine: true,
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
+                final unsynced = salesProvider.unsyncedSales;
+                final sales = salesProvider.sales;
+                final loadFailed = sales.isEmpty && salesProvider.error != null;
+
+                return RefreshIndicator(
+                  onRefresh: _loadSales,
+                  child: ListView(
+                    // Always scrollable so pull-to-refresh also works on an empty list
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.only(bottom: 16),
+                    children: [
+                      if (unsynced.isNotEmpty) ...[
+                        _SectionHeader(text: l10n.unsyncedSales),
+                        for (final sale in unsynced) _UnsyncedSaleTile(sale: sale, dateFormat: _dateFormat),
+                        const Divider(height: 24),
+                      ],
+                      if (sales.isEmpty && unsynced.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 96),
+                          child: Center(child: Text(loadFailed ? l10n.loadFailedNoData : l10n.noSalesFound)),
+                        ),
+                      for (final sale in sales) _buildSaleCard(sale, l10n),
+                    ],
+                  ),
                 );
               },
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSaleCard(SoldItem sale, AppLocalizations l10n) {
+    final fractions = sale.item?.fractions ?? [];
+    final soldFraction =
+        sale.fraction ??
+        (fractions.isNotEmpty
+            ? fractions.first
+            : Fraction(id: '', name: '', ratio: 1, sellingPrice: 0, purchasePrice: 0, itemId: ''));
+    final selectedId = _selectedFractionIds[sale.id] ?? soldFraction.id;
+    final selectedFraction = fractions.where((f) => f.id == selectedId).firstOrNull ?? soldFraction;
+    final factor = soldFraction.ratio / selectedFraction.ratio;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: ListTile(
+        title: Text(sale.item?.name ?? l10n.unknownItem),
+        subtitle: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${sale.item?.name}(${sale.salesman?.name ?? l10n.unknownSalesman})'),
+                  Text(l10n.quantityWithUnit((sale.quantity * factor).toString(), selectedFraction.name)),
+                  Text(l10n.amountWithCurrency(sale.soldPrice.toString())),
+                  if (sale.profit != null)
+                    Text(
+                      l10n.profitWithAmount('${l10n.currencySymbol} ${sale.profit!.toStringAsFixed(2)}'),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  if (sale.available_items_count != null)
+                    Text(
+                      l10n.availableItemsWithUnit(
+                        (sale.available_items_count! * factor).toString(),
+                        selectedFraction.name,
+                      ),
+                    ),
+                  Text(l10n.dateWithFormat(_dateFormat.format(sale.createdAt.toLocal()))),
+                ],
+              ),
+            ),
+            if (fractions.isNotEmpty)
+              Expanded(
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: DropdownButton<String>(
+                    value: selectedFraction.id,
+                    items:
+                        fractions
+                            .map((fraction) => DropdownMenuItem<String>(value: fraction.id, child: Text(fraction.name)))
+                            .toList(),
+                    onChanged: (value) => setState(() => _selectedFractionIds[sale.id] = value!),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        trailing: const Icon(Icons.arrow_forward_ios),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => SaleDetailScreen(sale: sale))),
+        isThreeLine: true,
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String text;
+  const _SectionHeader({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(text, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+/// A sale saved on the phone that the server has not confirmed yet.
+class _UnsyncedSaleTile extends StatelessWidget {
+  final PendingSale sale;
+  final DateFormat dateFormat;
+  const _UnsyncedSaleTile({required this.sale, required this.dateFormat});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
+    final salesProvider = context.read<SalesProvider>();
+    final failed = sale.isFailed;
+    final quantity = NumberFormat('#,##0.##').format(sale.quantity);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: failed ? scheme.errorContainer : scheme.secondaryContainer.withValues(alpha: 0.5),
+      child: ListTile(
+        leading: Icon(failed ? Icons.error_outline : Icons.schedule, color: failed ? scheme.error : null),
+        title: Text('${sale.itemName} · $quantity ${sale.fractionName}'),
+        subtitle: Text(
+          [
+            l10n.amountWithCurrency(sale.amount.toStringAsFixed(2)),
+            dateFormat.format(sale.createdAt),
+            failed ? l10n.notRecordedReason(sale.error!) : l10n.waitingToSync,
+          ].join('\n'),
+        ),
+        isThreeLine: true,
+        trailing:
+            failed
+                ? PopupMenuButton<String>(
+                  onSelected:
+                      (action) =>
+                          action == 'retry'
+                              ? salesProvider.retryUnsynced(sale.clientId)
+                              : salesProvider.discardUnsynced(sale.clientId),
+                  itemBuilder:
+                      (context) => [
+                        PopupMenuItem(value: 'retry', child: Text(l10n.retry)),
+                        PopupMenuItem(value: 'discard', child: Text(l10n.discardSale)),
+                      ],
+                )
+                : null,
+      ),
     );
   }
 }

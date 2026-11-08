@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:inventory_frontend/models/business.dart';
-import 'package:inventory_frontend/providers/business_provider.dart';
 import 'package:inventory_frontend/screens/admin/business_detail_screen.dart';
 import 'package:inventory_frontend/utils/api.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
@@ -17,26 +15,27 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
   List<Business> _businesses = [];
   bool _isLoading = false;
   String? _error;
-  
+
   @override
   void initState() {
     super.initState();
-    _loadBusinesses();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadBusinesses();
+    });
   }
-  
+
   Future<void> _loadBusinesses() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
-    
+
     try {
       final response = await Api.get('businesses');
-      
+
       setState(() {
-        _businesses = List<Business>.from(
-          response.map((x) => Business.fromJson(x))
-        );
+        _businesses = List<Business>.from(response.map((x) => Business.fromJson(x)));
         _isLoading = false;
       });
     } catch (e) {
@@ -46,13 +45,9 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
       });
     }
   }
-  
+
   void _viewBusinessDetails(Business business) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => BusinessDetailScreen(business: business),
-      ),
-    );
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => BusinessDetailScreen(business: business)));
   }
 
   @override
@@ -61,13 +56,14 @@ class _BusinessesScreenState extends State<BusinessesScreen> {
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: _loadBusinesses,
-        child: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-            ? Center(child: Text(l10n.errorWithDetails(_error!)))
-            : _businesses.isEmpty
-              ? Center(child: Text(l10n.noBusinessesFound))
-              : ListView.builder(
+        child:
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                ? Center(child: Text(l10n.errorWithDetails(_error!)))
+                : _businesses.isEmpty
+                ? Center(child: Text(l10n.noBusinessesFound))
+                : ListView.builder(
                   itemCount: _businesses.length,
                   itemBuilder: (context, index) {
                     final business = _businesses[index];

@@ -25,7 +25,10 @@ class _ShopsScreenState extends State<ShopsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadShops();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadShops();
+    });
   }
 
   @override
@@ -43,6 +46,7 @@ class _ShopsScreenState extends State<ShopsScreen> {
     final shopProvider = Provider.of<ShopProvider>(context, listen: false);
     await shopProvider.getShops();
 
+    if (!mounted) return;
     setState(() {
       _isLoading = false;
     });
@@ -54,24 +58,22 @@ class _ShopsScreenState extends State<ShopsScreen> {
       return;
     }
 
-    setState(() { _isSubmitting = true; });
+    setState(() {
+      _isSubmitting = true;
+    });
 
     final shopProvider = Provider.of<ShopProvider>(context, listen: false);
-    final success = await shopProvider.createShop(
-      _nameController.text.trim(),
-      _addressController.text.trim(),
-    );
+    final success = await shopProvider.createShop(_nameController.text.trim(), _addressController.text.trim());
 
-    setState(() { _isSubmitting = false; });
+    setState(() {
+      _isSubmitting = false;
+    });
 
     if (success) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.shopCreatedSuccess),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.shopCreatedSuccess), backgroundColor: Colors.green));
         // Clear form and hide it
         _nameController.clear();
         _addressController.clear();
@@ -82,10 +84,7 @@ class _ShopsScreenState extends State<ShopsScreen> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(shopProvider.error ?? l10n.shopCreatedFailed),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(shopProvider.error ?? l10n.shopCreatedFailed), backgroundColor: Colors.red),
         );
       }
     }
@@ -95,40 +94,32 @@ class _ShopsScreenState extends State<ShopsScreen> {
     final l10n = AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.deleteShopTitle),
-        content: Text(l10n.deleteShopContent(shop.name)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(l10n.cancel),
+      builder:
+          (context) => AlertDialog(
+            title: Text(l10n.deleteShopTitle),
+            content: Text(l10n.deleteShopContent(shop.name)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.cancel)),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: Text(l10n.delete),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: Text(l10n.delete),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
       final shopProvider = Provider.of<ShopProvider>(context, listen: false);
       final success = await shopProvider.deleteShop(shop.id);
-      
+
       if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.shopDeletedSuccess),
-            backgroundColor: Colors.green,
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.shopDeletedSuccess), backgroundColor: Colors.green));
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(shopProvider.error ?? l10n.shopDeletedFailed),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(shopProvider.error ?? l10n.shopDeletedFailed), backgroundColor: Colors.red),
         );
       }
     }
@@ -137,16 +128,11 @@ class _ShopsScreenState extends State<ShopsScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    
+
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.shops),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _isLoading ? null : _loadShops,
-          ),
-        ],
+        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _isLoading ? null : _loadShops)],
       ),
       body: Column(
         children: [
@@ -156,9 +142,7 @@ class _ShopsScreenState extends State<ShopsScreen> {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.blue.shade50,
-                border: Border(
-                  bottom: BorderSide(color: Colors.blue.shade200),
-                ),
+                border: Border(bottom: BorderSide(color: Colors.blue.shade200)),
               ),
               child: Form(
                 key: _formKey,
@@ -170,9 +154,7 @@ class _ShopsScreenState extends State<ShopsScreen> {
                       children: [
                         Text(
                           l10n.createNewShop,
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         IconButton(
                           onPressed: () {
@@ -217,160 +199,139 @@ class _ShopsScreenState extends State<ShopsScreen> {
                     const SizedBox(height: 16),
                     CustomButton(
                       text: _isSubmitting ? l10n.processing : l10n.save,
-                      onPressed: _isSubmitting ? null : () { _createShop(); },
+                      onPressed:
+                          _isSubmitting
+                              ? null
+                              : () {
+                                _createShop();
+                              },
                       isLoading: _isSubmitting,
                     ),
                   ],
                 ),
               ),
             ),
-          
+
           // Shops List Section
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : Consumer<ShopProvider>(
-                    builder: (context, shopProvider, child) {
-                      final shops = shopProvider.shops;
-                      
-                      if (shops.isEmpty) {
-                        return Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.store_outlined,
-                                size: 64,
-                                color: Colors.grey,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                l10n.noShopsFound,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                l10n.createFirstShopToGetStarted,
-                                style: const TextStyle(color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : Consumer<ShopProvider>(
+                      builder: (context, shopProvider, child) {
+                        final shops = shopProvider.shops;
 
-                      return ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: shops.length,
-                        itemBuilder: (context, index) {
-                          final shop = shops[index];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Colors.blue.shade100,
-                                child: Icon(
-                                  Icons.store,
-                                  color: Colors.blue.shade700,
+                        if (shops.isEmpty) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.store_outlined, size: 64, color: Colors.grey),
+                                const SizedBox(height: 16),
+                                Text(
+                                  l10n.noShopsFound,
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey),
                                 ),
-                              ),
-                              title: Text(
-                                shop.name,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(shop.address),
-                                  const SizedBox(height: 4),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.people,
-                                        size: 16,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${shop.salespeople?.length ?? 0} ${l10n.salespeople}',
-                                        style: TextStyle(
-                                          color: Colors.grey.shade600,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) async {
-                                  switch (value) {
-                                    case 'view':
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => ShopDetailScreen(shop: shop),
-                                        ),
-                                      );
-                                      break;
-                                    case 'edit':
-                                      // TODO: Implement edit shop functionality
-                                      break;
-                                    case 'delete':
-                                      await _deleteShop(shop);
-                                      break;
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  PopupMenuItem(
-                                    value: 'view',
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.visibility),
-                                        const SizedBox(width: 8),
-                                        Text(l10n.viewDetails),
-                                      ],
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'edit',
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.edit),
-                                        const SizedBox(width: 8),
-                                        Text(l10n.edit),
-                                      ],
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'delete',
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.delete, color: Colors.red),
-                                        const SizedBox(width: 8),
-                                        Text(l10n.delete, style: const TextStyle(color: Colors.red)),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => ShopDetailScreen(shop: shop),
-                                  ),
-                                );
-                              },
+                                const SizedBox(height: 8),
+                                Text(l10n.createFirstShopToGetStarted, style: const TextStyle(color: Colors.grey)),
+                              ],
                             ),
                           );
-                        },
-                      );
-                    },
-                  ),
+                        }
+
+                        return ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: shops.length,
+                          itemBuilder: (context, index) {
+                            final shop = shops[index];
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: Colors.blue.shade100,
+                                  child: Icon(Icons.store, color: Colors.blue.shade700),
+                                ),
+                                title: Text(shop.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(shop.address),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Icon(Icons.people, size: 16, color: Colors.grey.shade600),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${shop.salespeople?.length ?? 0} ${l10n.salespeople}',
+                                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                trailing: PopupMenuButton<String>(
+                                  onSelected: (value) async {
+                                    switch (value) {
+                                      case 'view':
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(builder: (context) => ShopDetailScreen(shop: shop)),
+                                        );
+                                        break;
+                                      case 'edit':
+                                        // TODO: Implement edit shop functionality
+                                        break;
+                                      case 'delete':
+                                        await _deleteShop(shop);
+                                        break;
+                                    }
+                                  },
+                                  itemBuilder:
+                                      (context) => [
+                                        PopupMenuItem(
+                                          value: 'view',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.visibility),
+                                              const SizedBox(width: 8),
+                                              Text(l10n.viewDetails),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'edit',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.edit),
+                                              const SizedBox(width: 8),
+                                              Text(l10n.edit),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.delete, color: Colors.red),
+                                              const SizedBox(width: 8),
+                                              Text(l10n.delete, style: const TextStyle(color: Colors.red)),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                ),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => ShopDetailScreen(shop: shop)),
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
           ),
         ],
       ),
@@ -388,4 +349,4 @@ class _ShopsScreenState extends State<ShopsScreen> {
       ),
     );
   }
-} 
+}

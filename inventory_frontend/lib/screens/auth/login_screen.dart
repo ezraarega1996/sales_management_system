@@ -89,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   Image.asset(
-                    'assets/images/logo.png',
+                    'assets/images/logo.jpg',
                     width: MediaQuery.of(context).size.width,
                     height: 300,
                   ),

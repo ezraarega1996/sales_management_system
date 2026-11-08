@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:inventory_frontend/models/fraction.dart';
 import 'package:inventory_frontend/models/item.dart';
 import 'package:inventory_frontend/providers/item_provider.dart';
 import 'package:inventory_frontend/widgets/custom_button.dart';
@@ -10,10 +9,7 @@ import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 class FractionManagementDialog extends StatefulWidget {
   final Item item;
 
-  const FractionManagementDialog({
-    super.key,
-    required this.item,
-  });
+  const FractionManagementDialog({super.key, required this.item});
 
   @override
   State<FractionManagementDialog> createState() => _FractionManagementDialogState();
@@ -62,18 +58,11 @@ class _FractionManagementDialogState extends State<FractionManagementDialog> {
         _sellingPriceController.clear();
         _purchasePriceController.clear();
         setState(() => _isUnit = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.fractionAddedSuccessfully)),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.fractionAddedSuccessfully)));
         Navigator.of(context).pop(); // Close dialog after successful addition
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
     }
   }
 
@@ -94,15 +83,9 @@ class _FractionManagementDialogState extends State<FractionManagementDialog> {
               children: [
                 Text(
                   l10n.manageUnitsFor(widget.item.name),
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
+                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
               ],
             ),
             const SizedBox(height: 24),
@@ -113,22 +96,13 @@ class _FractionManagementDialogState extends State<FractionManagementDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Add New Unit',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      Text('Add New Unit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 16),
                       Text(
                         l10n.addPrimarySellingUnitDescription,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
-                  const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
                       CustomTextField(
                         controller: _nameController,
@@ -190,10 +164,7 @@ class _FractionManagementDialogState extends State<FractionManagementDialog> {
                         },
                       ),
                       const SizedBox(height: 24),
-                      CustomButton(
-                        onPressed: _addFraction,
-                        text: l10n.addUnit,
-                      ),
+                      CustomButton(onPressed: _addFraction, text: l10n.addUnit),
                     ],
                   ),
                 ),

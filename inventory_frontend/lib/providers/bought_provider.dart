@@ -6,23 +6,19 @@ class BoughtProvider with ChangeNotifier {
   List<Bought> _boughts = [];
   bool _isLoading = false;
   String? _error;
-  
+
   List<Bought> get boughts => _boughts;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  
-  Future<void> fetchBoughts() async { 
+
+  Future<void> fetchBoughts() async {
     _isLoading = true;
     _error = null;
     notifyListeners();
-    
+
     try {
-      final response = await Api.get('boughts');
-      print("boughts response: $response");
-      _boughts = List<Bought>.from(
-        response.map((x) => Bought.fromJson(x))
-      );
-      print("Fetched boughts: $_boughts.shop");
+      final response = (await Api.getCached('boughts')).data;
+      _boughts = List<Bought>.from(response.map((x) => Bought.fromJson(x)));
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -31,7 +27,7 @@ class BoughtProvider with ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
   Future<bool> createBought({
     required String itemId,
     required String fractionId,
@@ -41,19 +37,10 @@ class BoughtProvider with ChangeNotifier {
     DateTime? expiryDate,
     String? shopId,
   }) async {
-    print('BoughtProvider: createBought called with:');
-    print('itemId: $itemId');
-    print('fractionId: $fractionId');
-    print('fractionPurchasePrice: $fractionPurchasePrice');
-    print('fractionSoldPrice: $fractionSoldPrice');
-    print('quantity: $quantity');
-    print('expiryDate: $expiryDate');
-    print('shopId: $shopId');
-    
     _isLoading = true;
     _error = null;
     notifyListeners();
-    
+
     try {
       final requestData = {
         'itemId': itemId,
@@ -64,29 +51,24 @@ class BoughtProvider with ChangeNotifier {
         'expiryDate': expiryDate?.toIso8601String(),
         'shopId': shopId,
       };
-      
-      print('BoughtProvider: Sending request data: $requestData');
-      
+
       final response = await Api.post('boughts', requestData);
-      
-      print('BoughtProvider: Received response: $response');
-      
+
       final newBought = Bought.fromJson(response);
       _boughts.insert(0, newBought);
-      
+
       _isLoading = false;
       notifyListeners();
-      
+
       return true;
     } catch (e) {
-      print('BoughtProvider: Error occurred: $e');
       _error = e.toString();
       _isLoading = false;
       notifyListeners();
       return false;
     }
   }
-  
+
   Future<bool> updateBought({
     required String id,
     String? fractionId,
@@ -99,7 +81,7 @@ class BoughtProvider with ChangeNotifier {
     _isLoading = true;
     _error = null;
     notifyListeners();
-    
+
     try {
       final response = await Api.put('boughts/$id', {
         'fractionId': fractionId,
@@ -109,16 +91,16 @@ class BoughtProvider with ChangeNotifier {
         'expiryDate': expiryDate?.toIso8601String(),
         'shopId': shopId,
       });
-      
+
       final updatedBought = Bought.fromJson(response);
       final index = _boughts.indexWhere((t) => t.id == id);
       if (index != -1) {
         _boughts[index] = updatedBought;
       }
-      
+
       _isLoading = false;
       notifyListeners();
-      
+
       return true;
     } catch (e) {
       _error = e.toString();
@@ -127,20 +109,20 @@ class BoughtProvider with ChangeNotifier {
       return false;
     }
   }
-  
+
   Future<bool> deleteBought(String id) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
-    
+
     try {
       await Api.delete('boughts/$id');
-      
+
       _boughts.removeWhere((t) => t.id == id);
-      
+
       _isLoading = false;
       notifyListeners();
-      
+
       return true;
     } catch (e) {
       _error = e.toString();
@@ -149,9 +131,4 @@ class BoughtProvider with ChangeNotifier {
       return false;
     }
   }
-  
-  void clearError() {
-    _error = null;
-    notifyListeners();
-  }
-} 
+}

@@ -18,10 +18,10 @@ class ShopProvider with ChangeNotifier {
   Future<void> getShops() async {
     _setLoading(true);
     _clearError();
-    
+
     try {
-      final response = await Api.get('shops');
-      
+      final response = (await Api.getCached('shops')).data;
+
       if (response != null) {
         final List<dynamic> shopsData = response;
         _shops = shopsData.map((shop) => Shop.fromJson(shop)).toList();
@@ -36,40 +36,14 @@ class ShopProvider with ChangeNotifier {
     }
   }
 
-  // Get shop by ID
-  Future<Shop?> getShopById(String id) async {
-    _setLoading(true);
-    _clearError();
-    
-    try {
-      final response = await Api.get('shops/$id');
-      
-      if (response != null) {
-        final shop = Shop.fromJson(response);
-        return shop;
-      } else {
-        _setError('Failed to load shop');
-        return null;
-      }
-    } catch (e) {
-      _setError('Error loading shop: $e');
-      return null;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
   // Create shop
   Future<bool> createShop(String name, String address) async {
     _setLoading(true);
     _clearError();
-    
+
     try {
-      final response = await Api.post('shops', {
-        'name': name,
-        'address': address,
-      });
-      
+      final response = await Api.post('shops', {'name': name, 'address': address});
+
       if (response != null) {
         final shop = Shop.fromJson(response['shop']);
         _shops.add(shop);
@@ -87,45 +61,14 @@ class ShopProvider with ChangeNotifier {
     }
   }
 
-  // Update shop
-  Future<bool> updateShop(String id, String name, String address) async {
-    _setLoading(true);
-    _clearError();
-    
-    try {
-      final response = await Api.put('shops/$id', {
-        'name': name,
-        'address': address,
-      });
-      
-      if (response != null) {
-        final updatedShop = Shop.fromJson(response['shop']);
-        final index = _shops.indexWhere((shop) => shop.id == id);
-        if (index != -1) {
-          _shops[index] = updatedShop;
-          notifyListeners();
-        }
-        return true;
-      } else {
-        _setError('Failed to update shop');
-        return false;
-      }
-    } catch (e) {
-      _setError('Error updating shop: $e');
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
   // Delete shop
   Future<bool> deleteShop(String id) async {
     _setLoading(true);
     _clearError();
-    
+
     try {
       final response = await Api.delete('shops/$id');
-      
+
       if (response != null) {
         _shops.removeWhere((shop) => shop.id == id);
         notifyListeners();
@@ -146,10 +89,10 @@ class ShopProvider with ChangeNotifier {
   Future<void> getAvailableSalespeople() async {
     _setLoading(true);
     _clearError();
-    
+
     try {
       final response = await Api.get('shops/available-salespeople');
-      
+
       if (response != null) {
         final List<dynamic> salespeopleData = response;
         _availableSalespeople = salespeopleData.map((user) => User.fromJson(user)).toList();
@@ -168,12 +111,10 @@ class ShopProvider with ChangeNotifier {
   Future<bool> assignSalespersonToShop(String shopId, String salespersonId) async {
     _setLoading(true);
     _clearError();
-    
+
     try {
-      final response = await Api.post('shops/$shopId/assign-salesperson', {
-        'salespersonId': salespersonId,
-      });
-      
+      final response = await Api.post('shops/$shopId/assign-salesperson', {'salespersonId': salespersonId});
+
       if (response != null) {
         // Refresh shops to get updated data
         await getShops();
@@ -195,12 +136,10 @@ class ShopProvider with ChangeNotifier {
   Future<bool> removeSalespersonFromShop(String shopId, String salespersonId) async {
     _setLoading(true);
     _clearError();
-    
+
     try {
-      final response = await Api.post('shops/$shopId/remove-salesperson', {
-        'salespersonId': salespersonId,
-      });
-      
+      final response = await Api.post('shops/$shopId/remove-salesperson', {'salespersonId': salespersonId});
+
       if (response != null) {
         // Refresh shops to get updated data
         await getShops();
@@ -232,9 +171,4 @@ class ShopProvider with ChangeNotifier {
     _error = null;
     notifyListeners();
   }
-
-  void clearShops() {
-    _shops = [];
-    notifyListeners();
-  }
-} 
+}

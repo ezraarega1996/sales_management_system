@@ -78,8 +78,11 @@ class _SummaryScreenState extends State<SummaryScreen> {
   void initState() {
     super.initState();
     _initDates();
-    _loadData();
-    _loadShops();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+      _loadShops();
+    });
   }
 
   void _initDates() {

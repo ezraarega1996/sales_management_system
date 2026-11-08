@@ -15,24 +15,22 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   int _selectedIndex = 0;
-  
+
   Future<void> _logout() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     await authProvider.logout();
-    
+
     if (!mounted) return;
-    
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginScreen())
-    );
+
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
-  
+
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
   }
-  
+
   Widget _getScreen() {
     switch (_selectedIndex) {
       case 0:
@@ -46,32 +44,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
     final l10n = AppLocalizations.of(context)!;
-    
+
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.adminDashboard),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
-          ),
-        ],
+        actions: [IconButton(icon: const Icon(Icons.logout), onPressed: _logout)],
       ),
       body: _getScreen(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
         items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.business),
-            label: l10n.businessesLabel,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.people),
-            label: l10n.users,
-          ),
+          BottomNavigationBarItem(icon: const Icon(Icons.business), label: l10n.businessesLabel),
+          BottomNavigationBarItem(icon: const Icon(Icons.people), label: l10n.users),
         ],
       ),
     );

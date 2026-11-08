@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:inventory_frontend/models/user.dart';
 import 'package:inventory_frontend/utils/api.dart';
-import 'package:inventory_frontend/widgets/custom_button.dart';
-import 'package:inventory_frontend/widgets/custom_text_field.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class UsersScreen extends StatefulWidget {
@@ -16,71 +14,60 @@ class _UsersScreenState extends State<UsersScreen> {
   List<User> _users = [];
   bool _isLoading = false;
   String? _error;
-  
+
   @override
   void initState() {
     super.initState();
-    _loadUsers();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadUsers();
+    });
   }
-  
+
   Future<void> _loadUsers() async {
-    print('Loading users...');
     setState(() {
       _isLoading = true;
       _error = null;
     });
-    print("one");
     try {
       final response = await Api.get('users');
-      print("two");
       setState(() {
-        _users = List<User>.from(
-          response.map((x) => User.fromJson(x))
-        );
+        _users = List<User>.from(response.map((x) => User.fromJson(x)));
         _isLoading = false;
       });
     } catch (e) {
-      print("Error loading users: $e");
       setState(() {
         _error = e.toString();
         _isLoading = false;
       });
     }
   }
-  
+
   void _viewUserDetails(User user) {
     final l10n = AppLocalizations.of(context)!;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.viewingDetailsFor(user.name)))
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.viewingDetailsFor(user.name))));
   }
-  
+
   Future<void> _toggleUserStatus(User user) async {
     final l10n = AppLocalizations.of(context)!;
     setState(() {
       _isLoading = true;
       _error = null;
     });
-    
+
     try {
-      await Api.put('users/${user.id}', {
-        'isActive': !(user.isActive ?? true),
-      });
-      
+      await Api.put('users/${user.id}', {'isActive': !user.isActive});
+
       await _loadUsers();
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.userStatusUpdatedSuccessfully))
-      );
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.userStatusUpdatedSuccessfully)));
     } catch (e) {
       setState(() {
         _error = e.toString();
         _isLoading = false;
       });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.errorWithDetails(_error ?? '')))
-      );
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.errorWithDetails(_error ?? ''))));
     }
   }
 
@@ -90,13 +77,14 @@ class _UsersScreenState extends State<UsersScreen> {
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: _loadUsers,
-        child: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-            ? Center(child: Text(l10n.errorWithDetails(_error!)))
-            : _users.isEmpty
-              ? Center(child: Text(l10n.noUsersFound))
-              : ListView.builder(
+        child:
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                ? Center(child: Text(l10n.errorWithDetails(_error!)))
+                : _users.isEmpty
+                ? Center(child: Text(l10n.noUsersFound))
+                : ListView.builder(
                   itemCount: _users.length,
                   itemBuilder: (context, index) {
                     final user = _users[index];
@@ -116,15 +104,12 @@ class _UsersScreenState extends State<UsersScreen> {
                           children: [
                             IconButton(
                               icon: Icon(
-                                user.isActive ?? true ? Icons.toggle_on : Icons.toggle_off,
-                                color: user.isActive ?? true ? Colors.green : Colors.grey,
+                                user.isActive ? Icons.toggle_on : Icons.toggle_off,
+                                color: user.isActive ? Colors.green : Colors.grey,
                               ),
                               onPressed: () => _toggleUserStatus(user),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.info),
-                              onPressed: () => _viewUserDetails(user),
-                            ),
+                            IconButton(icon: const Icon(Icons.info), onPressed: () => _viewUserDetails(user)),
                           ],
                         ),
                         isThreeLine: true,

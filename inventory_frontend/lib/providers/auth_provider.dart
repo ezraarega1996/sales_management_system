@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'package:inventory_frontend/models/user.dart';
+import 'package:inventory_frontend/services/sale_outbox.dart';
 import 'package:inventory_frontend/utils/api.dart';
+import 'package:inventory_frontend/utils/local_cache.dart';
 import 'package:inventory_frontend/utils/storage.dart';
 
 class AuthProvider with ChangeNotifier {
@@ -9,33 +10,26 @@ class AuthProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _isAuthenticated = false;
-  
+
   User? get user => _user;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isAuthenticated => _isAuthenticated;
   bool get isOwner => _user?.role == 'owner';
   bool get isAdmin => _user?.role == 'admin';
-  
-  AuthProvider() {
-    _initialize();
-  }
-  
-  Future<void> _initialize() async {
-    await checkAuth();
-  }
-  
+
+  /// Restores the saved session (called by the splash screen). Works offline: no network call
+  /// is needed to enter the app.
   Future<void> checkAuth() async {
     _isLoading = true;
     notifyListeners();
-    
     try {
       final token = await Storage.getToken();
       final userData = await Storage.getUser();
-      
       if (token != null && userData != null) {
         _user = User.fromJson(userData);
         _isAuthenticated = true;
+        await _attachUserData();
       }
     } catch (e) {
       _error = e.toString();
@@ -44,10 +38,15 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
+  /// Points the offline cache and sales queue at the current user's data.
+  Future<void> _attachUserData() async {
+    LocalCache.setUser(_user?.id);
+    await SaleOutbox.instance.switchUser(_user?.id);
+    SaleOutbox.instance.sync();
+  }
+
   Future<bool> login(String username, String password) async {
-    print('AuthProvider: login called with username: $username');
-    
     if (username.isEmpty || password.isEmpty) {
       _error = 'Username and password are required';
       notifyListeners();
@@ -57,147 +56,43 @@ class AuthProvider with ChangeNotifier {
     _isLoading = true;
     _error = null;
     notifyListeners();
-    
     try {
-      print('AuthProvider: Making API call to auth/login');
-      final response = await Api.post('auth/login', {
-        'username': username,
-        'password': password,
-      });
-
-      print('AuthProvider: Received response: $response');
-
+      final response = await Api.post('auth/login', {'username': username, 'password': password});
       if (response == null || response['token'] == null || response['user'] == null) {
         _error = 'Invalid response from server';
-        _isLoading = false;
-        notifyListeners();
         return false;
       }
-      
-      final token = response['token'];
-      final userData = response['user'];
-      
-      print('AuthProvider: Saving token and user data');
-      await Storage.saveToken(token);
-      await Storage.saveUser(userData);
-      
-      _user = User.fromJson(userData);
+      await Storage.saveToken(response['token']);
+      await Storage.saveUser(response['user']);
+      _user = User.fromJson(response['user']);
       _isAuthenticated = true;
-      _isLoading = false;
-      notifyListeners();
-      
-      print('AuthProvider: Login successful for user: ${_user?.name}');
+      await _attachUserData();
       return true;
-    } on FormatException catch (e) {
-      print('AuthProvider: FormatException: $e');
-      _error = 'Invalid response format from server';
-    } on SocketException catch (e) {
-      print('AuthProvider: SocketException: $e');
-      _error = 'No internet connection';
-    } on HttpException catch (e) {
-      print('AuthProvider: HttpException: $e');
-      _error = e.message;
+    } on OfflineException {
+      _error = 'Cannot reach the server. Check your connection and try again.';
+      return false;
     } catch (e) {
-      print('AuthProvider: Unexpected error: $e');
-      _error = 'An unexpected error occurred: $e';
+      _error = e.toString();
+      return false;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
-    
-    return false;
   }
-  
-  Future<bool> register(Map<String, dynamic> userData) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    
-    try {
-      final response = await Api.post('auth/register', userData);
-      
-      final token = response['token'];
-      final user = response['user'];
-      
-      await Storage.saveToken(token);
-      await Storage.saveUser(user);
-      
-      _user = User.fromJson(user);
-      _isAuthenticated = true;
-      _isLoading = false;
-      notifyListeners();
-      
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-  
+
   Future<bool> registerBusiness(Map<String, dynamic> businessData) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
-    
     try {
-      final response = await Api.post('businesses', businessData);
-      
-      _isLoading = false;
-      notifyListeners();
-      
+      await Api.post('businesses', businessData);
       return true;
     } catch (e) {
       _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
       return false;
-    }
-  }
-
-  Future<bool> sendOTP(String phoneNumber) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    
-    try {
-      final response = await Api.post('auth/send-otp', {
-        'phoneNumber': phoneNumber,
-      });
-      
+    } finally {
       _isLoading = false;
       notifyListeners();
-      
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  Future<bool> verifyOTP(String phoneNumber, String otp) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    
-    try {
-      final response = await Api.post('auth/verify-otp', {
-        'phoneNumber': phoneNumber,
-        'otp': otp,
-      });
-      
-      _isLoading = false;
-      notifyListeners();
-      
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      _isLoading = false;
-      notifyListeners();
-      return false;
     }
   }
 
@@ -205,34 +100,26 @@ class AuthProvider with ChangeNotifier {
     _isLoading = true;
     _error = null;
     notifyListeners();
-    
     try {
-      final response = await Api.post('auth/change-password', {
-        'currentPassword': currentPassword,
-        'newPassword': newPassword,
-      });
-      
-      _isLoading = false;
-      notifyListeners();
-      
+      await Api.post('auth/change-password', {'currentPassword': currentPassword, 'newPassword': newPassword});
       return true;
     } catch (e) {
       _error = e.toString();
+      return false;
+    } finally {
       _isLoading = false;
       notifyListeners();
-      return false;
     }
   }
-  
+
+  /// Unsynced sales are kept on the phone (per user) and sent after the same user logs in again.
   Future<void> logout() async {
-    await Storage.clearAll();
+    await Storage.clearSession();
+    await LocalCache.clear();
+    await SaleOutbox.instance.switchUser(null);
+    LocalCache.setUser(null);
     _user = null;
     _isAuthenticated = false;
-    notifyListeners();
-  }
-  
-  void clearError() {
-    _error = null;
     notifyListeners();
   }
 }

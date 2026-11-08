@@ -24,7 +24,10 @@ class _BusinessDetailScreenState extends State<BusinessDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _loadBusinessStats();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadBusinessStats();
+    });
   }
   
   Future<void> _loadBusinessStats() async {

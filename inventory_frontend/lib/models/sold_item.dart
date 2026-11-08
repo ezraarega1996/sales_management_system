@@ -38,43 +38,38 @@ class SoldItem {
   });
 
   factory SoldItem.fromJson(Map<String, dynamic> json) {
-    print('Parsing SoldItem: $json'); // Debug log
-
     final soldPriceRaw = json['soldPrice'] ?? json['amount'] ?? json['expectedAmount'];
     return SoldItem(
       id: json['id'],
       itemId: json['itemId'],
       fractionId: json['fractionId'],
-      quantity: (json['quantity'] == null)
-          ? 0.0
-          : (json['quantity'] is int)
-              ? (json['quantity'] as int).toDouble()
-              : json['quantity'],
-      soldPrice: (soldPriceRaw == null)
-          ? 0.0
-          : (soldPriceRaw is num)
+      quantity: (json['quantity'] as num?)?.toDouble() ?? 0.0,
+      soldPrice:
+          (soldPriceRaw == null)
+              ? 0.0
+              : (soldPriceRaw is num)
               ? soldPriceRaw.toDouble()
               : double.tryParse(soldPriceRaw.toString()) ?? 0.0,
       businessId: json['businessId'],
       shopId: json['shopId'],
       salesmanId: json['salesmanId'],
-      createdAt: DateTime.parse(json['createdAt']),
+      // When the sale happened (may be earlier than createdAt for sales queued offline)
+      createdAt: DateTime.parse(json['soldTime'] ?? json['createdAt']),
       item: json['Item'] != null ? Item.fromJson(json['Item']) : null,
-      fraction: json['Item']?['fractions'] != null && json['Item']?['fractions'].isNotEmpty 
-          ? Fraction.fromJson(json['Item']['fractions'].firstWhere(
-              (f) => f['id'] == json['fractionId'],
-              orElse: () => null,
-            ))
-          : null,
+      fraction: _soldFraction(json),
       salesman: json['salesman'] != null ? User.fromJson(json['salesman']) : null,
-      available_items_count: json['available_items_count'] != null ? double.tryParse(json['available_items_count'].toString()) : null,
+      available_items_count:
+          json['available_items_count'] != null ? double.tryParse(json['available_items_count'].toString()) : null,
       availableItemId: json['availableItemId'],
-      profit: json['profit'] != null
-          ? (json['profit'] is int)
-              ? (json['profit'] as int).toDouble()
-              : (json['profit'] as num).toDouble()
-          : null,
+      profit: (json['profit'] as num?)?.toDouble(),
     );
+  }
+
+  static Fraction? _soldFraction(Map<String, dynamic> json) {
+    final fractions = json['Item']?['fractions'];
+    if (fractions is! List) return null;
+    final match = fractions.where((f) => f is Map && f['id'] == json['fractionId']).firstOrNull;
+    return match == null ? null : Fraction.fromJson(Map<String, dynamic>.from(match));
   }
 
   Map<String, dynamic> toJson() {

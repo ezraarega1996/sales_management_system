@@ -1,13 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:inventory_frontend/models/bought.dart';
-import 'package:inventory_frontend/models/item.dart';
-import 'package:inventory_frontend/models/fraction.dart';
-import 'package:inventory_frontend/providers/bought_provider.dart';
-import 'package:inventory_frontend/providers/item_provider.dart';
 import 'package:inventory_frontend/providers/available_item_provider.dart';
-import 'package:inventory_frontend/widgets/custom_button.dart';
-import 'package:inventory_frontend/widgets/custom_text_field.dart';
 import 'package:intl/intl.dart';
 import 'package:inventory_frontend/models/available_item.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
@@ -15,12 +8,8 @@ import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 class TransactionsScreen extends StatefulWidget {
   final AvailableItem availableItem;
   final DateTime? showBefore;
-  
-  const TransactionsScreen({
-    super.key,
-    required this.availableItem,
-    this.showBefore,
-  });
+
+  const TransactionsScreen({super.key, required this.availableItem, this.showBefore});
 
   @override
   State<TransactionsScreen> createState() => _TransactionsScreenState();
@@ -34,12 +23,15 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadTransactions();
+    // Load after the first frame: providers notify listeners, which isn't allowed during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadTransactions();
+    });
   }
 
   Future<void> _loadTransactions() async {
     if (!mounted) return;
-    
+
     setState(() {
       _isLoading = true;
     });
@@ -57,26 +49,17 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 
   List<Map<String, dynamic>> _getCombinedTransactions() {
     final List<Map<String, dynamic>> transactions = [];
-    final availableItem = context.read<AvailableItemProvider>()
-        .getAvailableItem(widget.availableItem.id);
+    final availableItem = context.read<AvailableItemProvider>().getAvailableItem(widget.availableItem.id);
 
     if (availableItem?.boughtTransactions != null) {
       for (var transaction in availableItem!.boughtTransactions!) {
-        transactions.add({
-          'type': 'bought',
-          'transaction': transaction,
-          'date': transaction.createdAt,
-        });
+        transactions.add({'type': 'bought', 'transaction': transaction, 'date': transaction.createdAt});
       }
     }
 
     if (availableItem?.soldTransactions != null) {
       for (var transaction in availableItem!.soldTransactions!) {
-        transactions.add({
-          'type': 'sold',
-          'transaction': transaction,
-          'date': transaction.createdAt,
-        });
+        transactions.add({'type': 'sold', 'transaction': transaction, 'date': transaction.createdAt});
       }
     }
 
@@ -95,8 +78,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final itemFractions = widget.availableItem.item?.fractions ?? [];
-    final selectedFractionId = _selectedFractionIds[widget.availableItem.id] ?? 
-        (itemFractions.isNotEmpty ? itemFractions.first.id : '');
+    final selectedFractionId =
+        _selectedFractionIds[widget.availableItem.id] ?? (itemFractions.isNotEmpty ? itemFractions.first.id : '');
     final selectedFraction = itemFractions.firstWhere(
       (f) => f.id == selectedFractionId,
       orElse: () => itemFractions.first,
@@ -109,9 +92,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         (f) => f.id == trans.fractionId,
         orElse: () => itemFractions.first,
       );
-      displayedQuantity = trans.available_items_count *
-          transactionFraction.ratio /
-          selectedFraction.ratio;
+      displayedQuantity = trans.available_items_count * transactionFraction.ratio / selectedFraction.ratio;
     } else {
       displayedQuantity = widget.availableItem.quantity / selectedFraction.ratio;
     }
@@ -121,12 +102,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('${l10n.transactions} - ${widget.availableItem.item?.name ?? l10n.unknownItem}'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadTransactions,
-          ),
-        ],
+        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _loadTransactions)],
       ),
       body: Column(
         children: [
@@ -145,16 +121,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                         children: [
                           const SizedBox(height: 8),
                           Text(
-                            'Available Quantity: ${displayedQuantity.toStringAsFixed(2)} ${selectedFraction.name ?? ""}',
+                            'Available Quantity: ${displayedQuantity.toStringAsFixed(2)} ${selectedFraction.name}',
                             style: const TextStyle(fontSize: 16),
                           ),
                           Text(
                             l10n.soldPrice(double.parse(selectedFraction.sellingPrice.toStringAsFixed(2))),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),
                           ),
                         ],
                       ),
@@ -178,22 +150,23 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                               child: DropdownButton<String>(
                                 isDense: true,
                                 value: _selectedFractionIds[widget.availableItem.id] ?? itemFractions.first.id,
-                                items: itemFractions.map((fraction) {
-                                  return DropdownMenuItem<String>(
-                                    value: fraction.id,
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.scale, color: Colors.blue.shade400, size: 18),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          fraction.name,
-                                          style: const TextStyle(fontWeight: FontWeight.w500),
-                                          overflow: TextOverflow.ellipsis,
+                                items:
+                                    itemFractions.map((fraction) {
+                                      return DropdownMenuItem<String>(
+                                        value: fraction.id,
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.scale, color: Colors.blue.shade400, size: 18),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              fraction.name,
+                                              style: const TextStyle(fontWeight: FontWeight.w500),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
+                                      );
+                                    }).toList(),
                                 onChanged: (value) {
                                   setState(() {
                                     _selectedFractionIds[widget.availableItem.id] = value!;
@@ -212,83 +185,76 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               ),
             ),
           ),
-          
+
           // Transactions list
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _transactions.isEmpty
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _transactions.isEmpty
                     ? Center(
-                        child: Text(
-                          l10n.noTransactionsFound,
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                      )
+                      child: Text(
+                        l10n.noTransactionsFound,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    )
                     : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: _transactions.length,
-                        itemBuilder: (context, index) {
-                          final transaction = _transactions[index];
-                          final isBought = transaction['type'] == 'bought';
-                          final dynamic trans = transaction['transaction'];
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _transactions.length,
+                      itemBuilder: (context, index) {
+                        final transaction = _transactions[index];
+                        final isBought = transaction['type'] == 'bought';
+                        final dynamic trans = transaction['transaction'];
 
-                          final transactionFraction = itemFractions.firstWhere(
-                            (f) => f.id == trans.fractionId,
-                            orElse: () => itemFractions.first,
-                          );
+                        final transactionFraction = itemFractions.firstWhere(
+                          (f) => f.id == trans.fractionId,
+                          orElse: () => itemFractions.first,
+                        );
 
-                          double convertedQuantity = trans.quantity;
-                          if (selectedFraction != null) {
-                            convertedQuantity = trans.quantity * transactionFraction.ratio / selectedFraction.ratio;
-                          }
-                          double convertedAvailableQty = trans.available_items_count;
-                          if (selectedFraction != null) {
-                            convertedAvailableQty = trans.available_items_count * transactionFraction.ratio / selectedFraction.ratio;
-                          }
-                          
-                          // Format to 2 decimal places for display
-                          final formattedQuantity = double.parse(convertedQuantity.toStringAsFixed(2));
-                          final formattedAvailableQty = double.parse(convertedAvailableQty.toStringAsFixed(2));
+                        double convertedQuantity = trans.quantity;
+                        convertedQuantity = trans.quantity * transactionFraction.ratio / selectedFraction.ratio;
+                        double convertedAvailableQty = trans.available_items_count;
+                        convertedAvailableQty =
+                            trans.available_items_count * transactionFraction.ratio / selectedFraction.ratio;
 
-                          return Card(
-                            color: isBought ? Colors.blue.shade50 : Colors.green.shade50,
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: Icon(
-                                isBought ? Icons.shopping_cart : Icons.point_of_sale,
+                        // Format to 2 decimal places for display
+                        final formattedQuantity = double.parse(convertedQuantity.toStringAsFixed(2));
+                        final formattedAvailableQty = double.parse(convertedAvailableQty.toStringAsFixed(2));
+
+                        return Card(
+                          color: isBought ? Colors.blue.shade50 : Colors.green.shade50,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            leading: Icon(
+                              isBought ? Icons.shopping_cart : Icons.point_of_sale,
+                              color: isBought ? Colors.blue : Colors.green,
+                            ),
+                            title: Text(
+                              isBought ? l10n.bought : l10n.sold,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
                                 color: isBought ? Colors.blue : Colors.green,
                               ),
-                              title: Text(
-                                isBought ? l10n.bought : l10n.sold,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: isBought ? Colors.blue : Colors.green,
-                                ),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (!isBought)
-                                    Text(l10n.soldBy(trans.salesman?.name ?? l10n.unknownSalesman)),
-                                  Text(
-                                    l10n.quantity(formattedQuantity, selectedFraction.name ?? ''),
-                                  ),
-                                  Text(
-                                    l10n.availableQuantity(formattedAvailableQty, selectedFraction.name ?? ''),
-                                  ),
-                                  Text(
-                                    dateFormat.format(transaction['date']),
-                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                  ),
-                                ],
-                              ),
                             ),
-                          );
-                        },
-                      ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (!isBought) Text(l10n.soldBy(trans.salesman?.name ?? l10n.unknownSalesman)),
+                                Text(l10n.quantity(formattedQuantity, selectedFraction.name)),
+                                Text(l10n.availableQuantity(formattedAvailableQty, selectedFraction.name)),
+                                Text(
+                                  dateFormat.format(transaction['date']),
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
           ),
         ],
       ),
     );
   }
-} 
+}

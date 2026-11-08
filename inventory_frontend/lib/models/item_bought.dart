@@ -32,7 +32,6 @@ class ItemBought {
   });
 
   factory ItemBought.fromJson(Map<String, dynamic> json) {
-    print('Parsing ItemBought: $json'); // Debug log
     return ItemBought(
       id: json['id'],
       itemId: json['itemId'],
@@ -46,7 +45,8 @@ class ItemBought {
       createdAt: DateTime.parse(json['createdAt'] ?? json['createdTime'] ?? DateTime.now().toIso8601String()),
       fraction: json['fraction'] != null ? Fraction.fromJson(json['fraction']) : null,
       availableItemId: json['availableItemId'],
-      available_items_count: json['available_items_count'] != null ? double.tryParse(json['available_items_count'].toString()) : null,
+      available_items_count:
+          json['available_items_count'] != null ? double.tryParse(json['available_items_count'].toString()) : null,
     );
   }
 
@@ -72,4 +72,4 @@ class ItemBought {
   String toString() {
     return 'ItemBought(id: $id, itemId: $itemId, fractionId: $fractionId, quantity: $quantity, fractionPurchasePrice: $fractionPurchasePrice, fractionSoldPrice: $fractionSoldPrice, expiryDate: $expiryDate, businessId: $businessId, salesmanId: $salesmanId, createdAt: $createdAt, fraction: $fraction, availableItemId: $availableItemId, available_items_count: $available_items_count)';
   }
-} 
+}

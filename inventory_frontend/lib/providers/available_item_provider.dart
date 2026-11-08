@@ -1,169 +1,113 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:inventory_frontend/models/available_item.dart';
-import 'dart:convert';
+import 'package:inventory_frontend/services/sale_outbox.dart';
 import 'package:inventory_frontend/utils/api.dart';
+import 'package:inventory_frontend/utils/local_cache.dart';
 
 class AvailableItemProvider with ChangeNotifier {
-  List<AvailableItem> _availableItems = [];
+  AvailableItemProvider({SaleOutbox? outbox}) : _outbox = outbox ?? SaleOutbox.instance {
+    _outbox.addListener(notifyListeners);
+    _syncedSub = _outbox.synced.listen(_onSaleSynced);
+  }
+
+  static const _freshFor = Duration(seconds: 60);
+
+  final SaleOutbox _outbox;
+  late final StreamSubscription<SyncedSale> _syncedSub;
+  Timer? _refreshDebounce;
+
+  /// Stock as last reported by the server (or the saved copy when offline).
+  List<AvailableItem> _serverItems = [];
+  String? _endpoint;
+  DateTime? _fetchedAt;
+  bool _fromCache = false;
   bool _isLoading = false;
   String? _error;
-  
-  List<AvailableItem> get availableItems => _availableItems;
+
+  /// Stock to show: server quantity minus sales recorded on this phone that are still syncing.
+  List<AvailableItem> get availableItems => _serverItems.map(_withPendingSales).toList();
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  Future<void> fetchAvailableItems({String? shopId}) async {
+  /// True when the list comes from the phone's saved copy because the server was unreachable.
+  bool get isShowingSavedData => _fromCache;
+  DateTime? get lastUpdated => _fetchedAt;
+
+  AvailableItem _withPendingSales(AvailableItem item) {
+    final pending = _outbox.pendingUnitsFor(item.id);
+    return pending == 0 ? item : item.withQuantity(math.max(0, item.quantity - pending));
+  }
+
+  /// Loads stock. With [force] false, data fetched in the last minute is reused instead of
+  /// downloading it again.
+  Future<void> fetchAvailableItems({String? shopId, bool force = true}) async {
+    final endpoint = (shopId != null && shopId.isNotEmpty) ? 'available-items?shopId=$shopId' : 'available-items';
+    final fresh =
+        _endpoint == endpoint &&
+        !_fromCache &&
+        _fetchedAt != null &&
+        DateTime.now().difference(_fetchedAt!) < _freshFor;
+    if (!force && fresh) return;
+
     _isLoading = true;
     _error = null;
     notifyListeners();
     try {
-      String endpoint = 'available-items';
-      if (shopId != null && shopId.isNotEmpty) {
-        endpoint += '?shopId=$shopId';
+      final response = await Api.getCached(endpoint);
+      _serverItems = (response.data as List).map((item) => AvailableItem.fromJson(item)).toList();
+      _endpoint = endpoint;
+      _fromCache = response.fromCache;
+      _fetchedAt = response.savedAt;
+    } catch (e) {
+      // Keep showing what we already have
+      _error = e.toString();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// A queued sale reached the server: make the deduction permanent locally right away, then
+  /// refresh from the server shortly after to pick up the authoritative numbers.
+  void _onSaleSynced(SyncedSale synced) {
+    final id = synced.sale.availableItemId;
+    final index = _serverItems.indexWhere((i) => i.id == id);
+    if (index != -1) {
+      final item = _serverItems[index];
+      _serverItems[index] = item.withQuantity(math.max(0, item.quantity - synced.sale.units));
+      final endpoint = _endpoint;
+      if (endpoint != null) {
+        LocalCache.write(endpoint, _serverItems.map((i) => i.toJson()).toList());
       }
-      print('Fetching available items for shopId: $shopId');
-      final response = await Api.get(endpoint);
-      final List<dynamic> data = response is List ? response : json.decode(response);
-      _availableItems = data.map((item) => AvailableItem.fromJson(item)).toList();
-      print('Fetched available items:');
-      for (var item in _availableItems) {
-        print('AvailableItem: itemId=${item.itemId}, shopId=${item.shopId}, quantity=${item.quantity}');
+      notifyListeners();
+    }
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(const Duration(seconds: 2), () {
+      if (_endpoint != null && _outbox.pending.isEmpty) {
+        fetchAvailableItems(shopId: Uri.parse(_endpoint!).queryParameters['shopId']);
       }
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<bool> deleteAvailableItem(String id) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    
-    try {
-      final response = await Api.delete('available-items/$id');
-      _availableItems.removeWhere((item) => item.id == id);
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> calculateAvailableItems() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    
-    try {
-      final response = await Api.get('available-items/calculate');
-      final List<dynamic> data = json.decode(response);
-      _availableItems = data.map((item) => AvailableItem.fromJson(item)).toList();
-    } catch (e) {
-      _error = e.toString();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<bool> createAvailableItem({
-    required String itemId,
-    required double quantity,
-    required double soldPrice,
-  }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    
-    try {
-      final response = await Api.post('available-items', {
-        'itemId': itemId,
-        'quantity': quantity,
-        'soldPrice': soldPrice,
-      });
-      
-        await fetchAvailableItems();
-        return true;
-    } catch (e) {
-      _error = e.toString();
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<bool> updateAvailableItem({
-    required String id,
-    double? quantity,
-    double? soldPrice,
-  }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    
-    try {
-      final response = await Api.put('available-items/$id', {
-        'quantity': quantity,
-        'soldPrice': soldPrice,
-      });
-      // await http.put(
-      //   Uri.parse('$baseUrl/available-items/$id'),
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //   },
-        // body: json.encode({
-        //   'quantity': quantity,
-        //   'soldPrice': soldPrice,
-        // }),
-      // );
-      
-        await fetchAvailableItems();
-        return true;
-    } catch (e) {
-      _error = e.toString();
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  void clearError() {
-    _error = null;
-    notifyListeners();
+    });
   }
 
   Future<void> fetchAvailableItemTransactions(String availableItemId) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
-    
     try {
-      final transactionsResponse = await Api.get('available-items/$availableItemId/transactions');
-      
-      if (transactionsResponse != null) {
-        final index = _availableItems.indexWhere((i) => i.id == availableItemId);
-        if (index != -1) {
-          final updatedItem = AvailableItem.fromJson({
-            ..._availableItems[index].toJson(),
-            'boughtTransactions': transactionsResponse['boughtTransactions'],
-            'soldTransactions': transactionsResponse['soldTransactions'],
-          });
-          _availableItems[index] = updatedItem;
-        }
+      final response = await Api.get('available-items/$availableItemId/transactions');
+      final index = _serverItems.indexWhere((i) => i.id == availableItemId);
+      if (response != null && index != -1) {
+        _serverItems[index] = AvailableItem.fromJson({
+          ..._serverItems[index].toJson(),
+          'boughtTransactions': response['boughtTransactions'],
+          'soldTransactions': response['soldTransactions'],
+        });
       }
-      
-      notifyListeners();
     } catch (e) {
       _error = e.toString();
-      print('Error fetching transactions for item $availableItemId: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -171,15 +115,15 @@ class AvailableItemProvider with ChangeNotifier {
   }
 
   AvailableItem? getAvailableItem(String availableItemId) {
-    try {
-      return _availableItems.firstWhere((item) => item.id == availableItemId);
-    } catch (e) {
-      return null;
-    }
+    final item = _serverItems.where((i) => i.id == availableItemId).firstOrNull;
+    return item == null ? null : _withPendingSales(item);
   }
 
-  // Get available items for a specific shop
-  List<AvailableItem> getAvailableItemsForShop(String shopId) {
-    return _availableItems.where((item) => item.shopId == shopId).toList();
+  @override
+  void dispose() {
+    _outbox.removeListener(notifyListeners);
+    _syncedSub.cancel();
+    _refreshDebounce?.cancel();
+    super.dispose();
   }
-} 
+}
