@@ -124,6 +124,144 @@ export const createSale = async (req, res) => {
   }
 }
 
+const UNDO_WINDOW_MS = 10 * 60 * 1000
+
+/**
+ * Records a basket (several items sold to one customer) as one receipt, all or nothing.
+ * Body: { clientId, soldTime?, shopId?, lines: [{ itemId, fractionId, quantity, amount, profit? }] }
+ * `clientId` becomes the receiptId of every line and makes retries safe: resending the same basket
+ * returns the already-recorded lines without touching stock again.
+ */
+export const createBatchSale = async (req, res) => {
+  const { clientId, soldTime, shopId, lines } = req.body
+  const businessId = req.user.businessId
+  const selectedShopId = shopId || req.user.shopId
+
+  if (!clientId) return res.status(400).json({ message: "clientId is required" })
+  if (!selectedShopId) return res.status(400).json({ message: "shopId is required to create a sale" })
+  if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ message: "The basket is empty" })
+  if (lines.some((l) => !l.itemId || !l.fractionId || !(l.quantity > 0) || !(l.amount >= 0))) {
+    return res.status(400).json({ message: "Every line needs itemId, fractionId, quantity and amount" })
+  }
+
+  const parsed = soldTime ? new Date(soldTime) : null
+  const saleTime = parsed && !isNaN(parsed) && parsed <= new Date() ? parsed : new Date()
+  const findReceipt = (transaction) =>
+    SoldItem.findAll({ where: { receiptId: clientId, businessId }, include: saleIncludes(), transaction, order: [["id", "ASC"]] })
+
+  try {
+    const result = await sequelize.transaction(async (transaction) => {
+      // Serialize requests for the same basket so a retry racing the original can't record it twice
+      await sequelize.query("SELECT pg_advisory_xact_lock(hashtext(:key))", { replacements: { key: clientId }, transaction })
+      const existing = await findReceipt(transaction)
+      if (existing.length) return { created: false, sales: existing }
+
+      const fractions = await Fraction.findAll({
+        where: { id: [...new Set(lines.map((l) => l.fractionId))] },
+        include: [{ model: Item, attributes: ["id", "name", "businessId"] }],
+        transaction,
+      })
+      const fractionById = new Map(fractions.map((f) => [f.id, f]))
+
+      // Lock each stock row once, even if several lines sell the same item in different units
+      const stockByItem = new Map()
+      for (const line of lines) {
+        const fraction = fractionById.get(line.fractionId)
+        if (!fraction || fraction.itemId !== line.itemId || fraction.Item?.businessId !== businessId) {
+          throw Object.assign(new Error("Item or unit not found"), { status: 404 })
+        }
+        if (!stockByItem.has(line.itemId)) {
+          const stock = await AvailableItem.findOne({
+            where: { itemId: line.itemId, shopId: selectedShopId, businessId },
+            lock: transaction.LOCK.UPDATE,
+            transaction,
+          })
+          if (!stock) throw Object.assign(new Error(`${fraction.Item.name} is not stocked in this shop`), { status: 400 })
+          stockByItem.set(line.itemId, stock)
+        }
+        const stock = stockByItem.get(line.itemId)
+        const units = line.quantity * fraction.ratio
+        if (parseFloat(stock.quantity) < units - 1e-9) {
+          throw Object.assign(new Error(`Not enough ${fraction.Item.name} in stock`), { status: 400 })
+        }
+        stock.quantity = parseFloat(stock.quantity) - units
+        line._stock = stock
+        line._ratio = fraction.ratio
+      }
+
+      for (const stock of stockByItem.values()) await stock.save({ transaction })
+
+      for (const line of lines) {
+        await SoldItem.create(
+          {
+            itemId: line.itemId,
+            fractionId: line.fractionId,
+            quantity: line.quantity,
+            amount: line.amount,
+            expectedAmount: line.amount,
+            profit: typeof line.profit === "number" ? line.profit : 0,
+            salesmanId: req.user.id,
+            businessId,
+            shopId: selectedShopId,
+            availableItemId: line._stock.id,
+            available_items_count: parseFloat(line._stock.quantity) / line._ratio,
+            receiptId: clientId,
+            soldTime: saleTime,
+            createdTime: saleTime,
+          },
+          { transaction },
+        )
+      }
+      return { created: true, sales: await findReceipt(transaction) }
+    })
+
+    res.status(result.created ? 201 : 200).json(result.sales)
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ message: error.message })
+    console.error("Error creating basket sale:", error.message)
+    res.status(500).json({ message: "Error creating sale", error: error.message })
+  }
+}
+
+/**
+ * Cancels a receipt and puts its stock back. Salesmen may undo their own receipt for 10 minutes
+ * (e.g. a mistake at the counter); owners and admins at any time.
+ */
+export const undoReceipt = async (req, res) => {
+  const { receiptId } = req.params
+  try {
+    const restored = await sequelize.transaction(async (transaction) => {
+      const sales = await SoldItem.findAll({ where: { receiptId, businessId: req.user.businessId }, transaction })
+      if (!sales.length) throw Object.assign(new Error("Receipt not found"), { status: 404 })
+
+      if (req.user.role === "salesman") {
+        const ownSales = sales.every((s) => s.salesmanId === req.user.id)
+        const recent = sales.every((s) => Date.now() - new Date(s.createdAt).getTime() <= UNDO_WINDOW_MS)
+        if (!ownSales || !recent) {
+          throw Object.assign(new Error("This sale can no longer be undone. Ask the owner."), { status: 403 })
+        }
+      }
+
+      const fractions = await Fraction.findAll({ where: { id: sales.map((s) => s.fractionId) }, transaction })
+      const ratioById = new Map(fractions.map((f) => [f.id, f.ratio]))
+      for (const sale of sales) {
+        if (!sale.availableItemId) continue
+        const stock = await AvailableItem.findByPk(sale.availableItemId, { lock: transaction.LOCK.UPDATE, transaction })
+        if (!stock) continue
+        stock.quantity = parseFloat(stock.quantity) + sale.quantity * (ratioById.get(sale.fractionId) ?? 1)
+        await stock.save({ transaction })
+      }
+      await SoldItem.destroy({ where: { receiptId, businessId: req.user.businessId }, transaction })
+      return sales.length
+    })
+    res.json({ message: "Sale undone", restoredLines: restored })
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ message: error.message })
+    console.error("Error undoing receipt:", error.message)
+    res.status(500).json({ message: "Error undoing sale", error: error.message })
+  }
+}
+
 export const updateSale = async (req, res) => {
   try {
     const { quantity, amount, expectedAmount, status, existing } = req.body

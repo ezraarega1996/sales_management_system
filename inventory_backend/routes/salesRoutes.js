@@ -3,6 +3,8 @@ import {
   getAllSales,
   getSaleById,
   createSale,
+  createBatchSale,
+  undoReceipt,
   updateSale,
   deleteSale,
   getSalesByUser,
@@ -17,6 +19,8 @@ router.get("/user", authenticate, getSalesByUser)
 router.get("/dashboard", authenticate, getDashboardStats)
 router.get("/:id", authenticate, getSaleById)
 router.post("/", authenticate, createSale)
+router.post("/batch", authenticate, createBatchSale)
+router.delete("/receipt/:receiptId", authenticate, undoReceipt)
 router.put("/:id", authenticate, authorizeOwner, updateSale)
 router.delete("/:id", authenticate, authorizeOwner, deleteSale)
 

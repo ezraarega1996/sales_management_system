@@ -74,12 +74,18 @@ const SoldItem = sequelize.define("SoldItem", {
     allowNull: true,
     unique: true,
   },
+  // Groups the lines of one basket (multi-item sale); also the basket's idempotency key
+  receiptId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
 }, {
   indexes: [
     { fields: ["businessId", "soldTime"] },
     { fields: ["salesmanId"] },
     { fields: ["shopId"] },
     { fields: ["itemId"] },
+    { fields: ["receiptId"] },
   ],
 })
 
