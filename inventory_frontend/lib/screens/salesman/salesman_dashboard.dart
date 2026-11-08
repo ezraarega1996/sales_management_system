@@ -6,11 +6,10 @@ import 'package:inventory_frontend/screens/auth/login_screen.dart';
 import 'package:inventory_frontend/screens/salesman/sell_item_screen.dart';
 import 'package:inventory_frontend/screens/salesman/view_sales_screen.dart';
 import 'package:inventory_frontend/screens/available_items_screen.dart';
-import 'package:inventory_frontend/widgets/dashboard_card.dart';
+import 'package:inventory_frontend/screens/dashboard_view.dart';
 import 'package:inventory_frontend/widgets/language_selector.dart';
 import 'package:inventory_frontend/screens/summary_screen.dart';
 import 'package:inventory_frontend/services/sale_outbox.dart';
-import 'package:inventory_frontend/widgets/offline_banner.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class SalesmanDashboard extends StatefulWidget {
@@ -122,77 +121,14 @@ class _SalesmanDashboardState extends State<SalesmanDashboard> {
   }
 
   Widget _buildDashboard() {
-    final l10n = AppLocalizations.of(context)!;
-    return Consumer<SalesProvider>(
-      builder: (context, salesProvider, child) {
-        final currency = l10n.currencySymbol;
-        return Column(
-          children: [
-            const OfflineBanner(),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _loadDashboardData,
-                child:
-                    _isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : SingleChildScrollView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    l10n.dashboard,
-                                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                                  ),
-                                  IconButton(icon: const Icon(Icons.refresh), onPressed: _loadDashboardData),
-                                ],
-                              ),
-                              DashboardCard(
-                                title: l10n.totalSales,
-                                value: '$currency ${salesProvider.totalSales?.toStringAsFixed(2) ?? '0.00'}',
-                                icon: Icons.point_of_sale,
-                                color: Colors.blue,
-                              ),
-                              const SizedBox(height: 16),
-                              DashboardCard(
-                                title: l10n.totalItemsSold,
-                                value: '${salesProvider.totalItemsSold ?? 0}',
-                                icon: Icons.shopping_cart,
-                                color: Colors.green,
-                              ),
-                              const SizedBox(height: 16),
-                              DashboardCard(
-                                title: l10n.todaysSales,
-                                value: '$currency ${salesProvider.todaySales?.toStringAsFixed(2) ?? '0.00'}',
-                                icon: Icons.today,
-                                color: Colors.orange,
-                              ),
-                              const SizedBox(height: 24),
-                              ElevatedButton.icon(
-                                onPressed: () {
-                                  final authProvider = context.read<AuthProvider>();
-                                  final shopId = authProvider.user?.shopId ?? authProvider.user?.shop?.id;
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => SummaryScreen(fixedShopId: shopId, allowShopSwitch: false),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.table_chart),
-                                label: Text(l10n.transactions),
-                              ),
-                            ],
-                          ),
-                        ),
-              ),
-            ),
-          ],
-        );
-      },
+    // Same dashboard as the owner; the server returns this salesman's own numbers.
+    // Indexes match _getScreen(): 1 = available items, 2 = sell, 3 = sales history
+    return DashboardView(
+      isLoading: _isLoading,
+      onRefresh: _loadDashboardData,
+      onViewSales: () => setState(() => _selectedIndex = 3),
+      onViewStock: () => setState(() => _selectedIndex = 1),
+      onSell: () => setState(() => _selectedIndex = 2),
     );
   }
 
@@ -203,7 +139,8 @@ class _SalesmanDashboardState extends State<SalesmanDashboard> {
       appBar: AppBar(
         title: Consumer<AuthProvider>(
           builder: (context, authProvider, child) {
-            return Text(authProvider.user?.name ?? l10n.salesmanDashboard);
+            // The dashboard header already greets the user by name
+            return Text(_selectedIndex == 0 ? l10n.dashboard : authProvider.user?.name ?? l10n.salesmanDashboard);
           },
         ),
         actions: const [LanguageSelector()],
@@ -245,6 +182,7 @@ class _SalesmanDashboardState extends State<SalesmanDashboard> {
                   selectedColor: Colors.blue,
                   onTap: () {
                     setState(() => _selectedIndex = 0);
+                    _loadDashboardData(); // refresh numbers after selling elsewhere
                     Navigator.pop(context);
                   },
                 ),

@@ -13,47 +13,68 @@ import 'package:inventory_frontend/providers/sales_provider.dart';
 import 'package:inventory_frontend/widgets/dashboard_chart.dart';
 import 'package:inventory_frontend/widgets/offline_banner.dart';
 
-/// Indexes of the owner screens, as used by OwnerDashboard's drawer.
-class OwnerTab {
-  static const sales = 1;
-  static const availableItems = 7;
-  static const shops = 8;
-}
-
-class OwnerDashboardView extends StatelessWidget {
+/// Dashboard shared by owners and salesmen.
+///
+/// The server scopes the numbers by role (`GET /sales/dashboard`): owners see the whole business
+/// with profit, shops and salesmen; a salesman sees their own sales and their shop's stock.
+class DashboardView extends StatelessWidget {
   final bool isLoading;
   final Future<void> Function() onRefresh;
-  final ValueChanged<int> onNavigate;
+  final VoidCallback onViewSales;
+  final VoidCallback onViewStock;
 
-  const OwnerDashboardView({super.key, required this.isLoading, required this.onRefresh, required this.onNavigate});
+  /// Owner only.
+  final VoidCallback? onViewShops;
+
+  /// Salesman only: shows a prominent "Sell item" button in the header.
+  final VoidCallback? onSell;
+
+  const DashboardView({
+    super.key,
+    required this.isLoading,
+    required this.onRefresh,
+    required this.onViewSales,
+    required this.onViewStock,
+    this.onViewShops,
+    this.onSell,
+  });
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final sales = context.watch<SalesProvider>();
-    final business = context.watch<BusinessProvider>().currentBusiness;
-    final userName = context.watch<AuthProvider>().user?.name;
+    final auth = context.watch<AuthProvider>();
+    final isOwner = auth.isOwner || auth.isAdmin;
+    // Owners load the full business; the login payload already carries the name for salesmen
+    final business = context.watch<BusinessProvider>().currentBusiness ?? auth.user?.business;
+    final userName = auth.user?.name;
+    final shopName = auth.user?.shop?.name;
     final stats = sales.dashboardStats;
     final fmt = _Fmt(l10n.currencySymbol);
+    Widget header(Map<String, dynamic>? s) => _Header(
+      business: business,
+      userName: userName,
+      shopName: isOwner ? null : shopName,
+      isOwner: isOwner,
+      stats: s,
+      fmt: fmt,
+      onSell: onSell,
+    );
 
     final List<Widget> children;
     if (isLoading && stats == null) {
       children = [
-        _Header(business: business, userName: userName, stats: null, fmt: fmt),
+        header(null),
         const Padding(padding: EdgeInsets.symmetric(vertical: 48), child: Center(child: CircularProgressIndicator())),
       ];
     } else if (sales.error != null && stats == null) {
-      children = [
-        _Header(business: business, userName: userName, stats: null, fmt: fmt),
-        const SizedBox(height: 16),
-        _ErrorCard(message: sales.error!, onRetry: onRefresh),
-      ];
+      children = [header(null), const SizedBox(height: 16), _ErrorCard(message: sales.error!, onRetry: onRefresh)];
     } else {
       final s = stats ?? const <String, dynamic>{};
       children = [
-        _Header(business: business, userName: userName, stats: s, fmt: fmt),
+        header(s),
         const SizedBox(height: 16),
-        _AllTimeCard(stats: s, fmt: fmt),
+        _AllTimeCard(stats: s, fmt: fmt, isOwner: isOwner),
         const SizedBox(height: 16),
         _SectionCard(
           title: l10n.salesTrend,
@@ -66,25 +87,16 @@ class OwnerDashboardView extends StatelessWidget {
             ),
           ),
         ),
+        if (isOwner) ...[
+          const SizedBox(height: 16),
+          _ShopsCard(shops: (s['salesByShop'] as List?) ?? const [], fmt: fmt, onViewAll: onViewShops),
+          const SizedBox(height: 16),
+          _SalesmenCard(data: sales.todaySalesData, fmt: fmt),
+        ],
         const SizedBox(height: 16),
-        _ShopsCard(
-          shops: (s['salesByShop'] as List?) ?? const [],
-          fmt: fmt,
-          onViewAll: () => onNavigate(OwnerTab.shops),
-        ),
+        _TopItemsCard(items: (s['topItems'] as List?) ?? const [], fmt: fmt, onViewAll: onViewSales),
         const SizedBox(height: 16),
-        _SalesmenCard(data: sales.todaySalesData, fmt: fmt),
-        const SizedBox(height: 16),
-        _TopItemsCard(
-          items: (s['topItems'] as List?) ?? const [],
-          fmt: fmt,
-          onViewAll: () => onNavigate(OwnerTab.sales),
-        ),
-        const SizedBox(height: 16),
-        _LowStockCard(
-          items: (s['lowStock'] as List?) ?? const [],
-          onViewAll: () => onNavigate(OwnerTab.availableItems),
-        ),
+        _LowStockCard(items: (s['lowStock'] as List?) ?? const [], onViewAll: onViewStock),
         const SizedBox(height: 24),
       ];
     }
@@ -151,10 +163,21 @@ double? _weekOverWeek(List days) {
 class _Header extends StatelessWidget {
   final Business? business;
   final String? userName;
+  final String? shopName;
+  final bool isOwner;
   final Map<String, dynamic>? stats;
   final _Fmt fmt;
+  final VoidCallback? onSell;
 
-  const _Header({required this.business, required this.userName, required this.stats, required this.fmt});
+  const _Header({
+    required this.business,
+    required this.userName,
+    required this.shopName,
+    required this.isOwner,
+    required this.stats,
+    required this.fmt,
+    required this.onSell,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -174,6 +197,14 @@ class _Header extends StatelessWidget {
     final todayProfit = _num(stats?['todayProfit']);
     final todayCount = (stats?['todayCount'] as num?)?.toInt() ?? 0;
     final margin = todaySales > 0 ? todayProfit / todaySales * 100 : null;
+    final averageSale = todayCount > 0 ? todaySales / todayCount : 0;
+    // Owners see the plan; salesmen see which shop they sell for
+    final chip =
+        isOwner
+            ? (business == null
+                ? null
+                : l10n.dashPlan(toBeginningOfSentenceCase(business!.subscriptionPlan) ?? business!.subscriptionPlan))
+            : shopName;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -208,17 +239,14 @@ class _Header extends StatelessWidget {
                   ],
                 ),
               ),
-              if (business != null)
+              if (chip != null)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: onHeader.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(
-                    l10n.dashPlan(toBeginningOfSentenceCase(business!.subscriptionPlan) ?? business!.subscriptionPlan),
-                    style: TextStyle(color: onHeader, fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
+                  child: Text(chip, style: TextStyle(color: onHeader, fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
             ],
           ),
@@ -236,13 +264,21 @@ class _Header extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _HeaderStat(
-                  icon: Icons.trending_up_rounded,
-                  label: l10n.dashProfit,
-                  value: fmt.money(todayProfit),
-                  hint: margin != null ? l10n.dashMargin('${margin.toStringAsFixed(0)}%') : null,
-                  color: onHeader,
-                ),
+                child:
+                    isOwner
+                        ? _HeaderStat(
+                          icon: Icons.trending_up_rounded,
+                          label: l10n.dashProfit,
+                          value: fmt.money(todayProfit),
+                          hint: margin != null ? l10n.dashMargin('${margin.toStringAsFixed(0)}%') : null,
+                          color: onHeader,
+                        )
+                        : _HeaderStat(
+                          icon: Icons.calculate_outlined,
+                          label: l10n.dashAverageSale,
+                          value: fmt.money(averageSale),
+                          color: onHeader,
+                        ),
               ),
               Container(width: 1, height: 36, color: onHeader.withValues(alpha: 0.25)),
               const SizedBox(width: 16),
@@ -256,6 +292,22 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
+          if (onSell != null) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: onSell,
+                style: FilledButton.styleFrom(
+                  backgroundColor: onHeader,
+                  foregroundColor: scheme.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                icon: const Icon(Icons.point_of_sale),
+                label: Text(l10n.sellItem, style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -352,8 +404,9 @@ class _SectionCard extends StatelessWidget {
 class _AllTimeCard extends StatelessWidget {
   final Map<String, dynamic> stats;
   final _Fmt fmt;
+  final bool isOwner;
 
-  const _AllTimeCard({required this.stats, required this.fmt});
+  const _AllTimeCard({required this.stats, required this.fmt, required this.isOwner});
 
   @override
   Widget build(BuildContext context) {
@@ -362,9 +415,11 @@ class _AllTimeCard extends StatelessWidget {
     final change = _weekOverWeek((stats['salesByDay'] as List?) ?? const []);
     final up = (change ?? 0) >= 0;
     final changeColor = up ? Colors.green.shade700 : scheme.error;
+    final count = (stats['salesCount'] as num?)?.toInt() ?? 0;
+    final average = count > 0 ? _num(stats['totalSales']) / count : 0;
 
     return _SectionCard(
-      title: l10n.dashAllTime,
+      title: isOwner ? l10n.dashAllTime : l10n.dashYourSales,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -376,18 +431,26 @@ class _AllTimeCard extends StatelessWidget {
                 icon: Icons.payments_outlined,
                 color: scheme.primary,
               ),
-              _Metric(
-                label: l10n.dashProfit,
-                value: fmt.money(stats['totalProfit']),
-                icon: Icons.savings_outlined,
-                color: Colors.green.shade700,
-              ),
+              if (isOwner)
+                _Metric(
+                  label: l10n.dashProfit,
+                  value: fmt.money(stats['totalProfit']),
+                  icon: Icons.savings_outlined,
+                  color: Colors.green.shade700,
+                ),
               _Metric(
                 label: l10n.dashTransactions,
-                value: '${stats['salesCount'] ?? 0}',
+                value: '$count',
                 icon: Icons.shopping_bag_outlined,
                 color: scheme.tertiary,
               ),
+              if (!isOwner)
+                _Metric(
+                  label: l10n.dashAverageSale,
+                  value: fmt.money(average),
+                  icon: Icons.calculate_outlined,
+                  color: Colors.green.shade700,
+                ),
             ],
           ),
           if (change != null) ...[
@@ -473,7 +536,7 @@ class _ShareBar extends StatelessWidget {
 class _ShopsCard extends StatelessWidget {
   final List shops;
   final _Fmt fmt;
-  final VoidCallback onViewAll;
+  final VoidCallback? onViewAll;
 
   const _ShopsCard({required this.shops, required this.fmt, required this.onViewAll});
 

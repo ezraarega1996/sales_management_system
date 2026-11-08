@@ -13,7 +13,7 @@ import 'package:inventory_frontend/screens/owner/users_screen.dart';
 import 'package:inventory_frontend/screens/owner/boughts_screen.dart';
 import 'package:inventory_frontend/screens/available_items_screen.dart';
 import 'package:inventory_frontend/screens/owner/shops_screen.dart';
-import 'package:inventory_frontend/screens/owner/owner_dashboard_view.dart';
+import 'package:inventory_frontend/screens/dashboard_view.dart';
 import 'package:inventory_frontend/screens/summary_screen.dart';
 import 'package:inventory_frontend/widgets/language_selector.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
@@ -37,36 +37,33 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadDashboardData());
   }
 
-Future<void> _loadDashboardData() async {
-  if (!mounted) return;
-  
-  setState(() {
-    _isLoading = true;
-  });
+  Future<void> _loadDashboardData() async {
+    if (!mounted) return;
 
-  final salesProvider = context.read<SalesProvider>();
-  final authProvider = context.read<AuthProvider>();
-  final businessProvider = context.read<BusinessProvider>();
-
-  try {
-    await Future.wait([
-      salesProvider.fetchDashboardStats(),
-      salesProvider.fetchTodaySales(),
-      if (authProvider.user?.businessId != null)
-        businessProvider.loadCurrentBusiness(
-          authProvider.user!.businessId!,
-        ),
-    ]);
-  } catch (_) {
-    // Providers already track error state.
-  }
-
-  if (mounted) {
     setState(() {
-      _isLoading = false;
+      _isLoading = true;
     });
+
+    final salesProvider = context.read<SalesProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final businessProvider = context.read<BusinessProvider>();
+
+    try {
+      await Future.wait([
+        salesProvider.fetchDashboardStats(),
+        salesProvider.fetchTodaySales(),
+        if (authProvider.user?.businessId != null) businessProvider.loadCurrentBusiness(authProvider.user!.businessId!),
+      ]);
+    } catch (_) {
+      // Providers already track error state.
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
-}
 
   void _onItemTapped(int index) {
     setState(() {
@@ -80,9 +77,7 @@ Future<void> _loadDashboardData() async {
 
     if (!mounted) return;
 
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginScreen())
-    );
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   Widget _getScreen() {
@@ -113,10 +108,13 @@ Future<void> _loadDashboardData() async {
   }
 
   Widget _buildDashboard() {
-    return OwnerDashboardView(
+    // Indexes match _getScreen(): 1 = sales, 7 = available items, 8 = shops
+    return DashboardView(
       isLoading: _isLoading,
       onRefresh: _loadDashboardData,
-      onNavigate: _onItemTapped,
+      onViewSales: () => _onItemTapped(1),
+      onViewStock: () => _onItemTapped(7),
+      onViewShops: () => _onItemTapped(8),
     );
   }
 
@@ -125,16 +123,14 @@ Future<void> _loadDashboardData() async {
     return Consumer<BusinessProvider>(
       builder: (context, businessProvider, child) {
         final business = businessProvider.currentBusiness;
-        
+
         return Scaffold(
           appBar: AppBar(
             // The dashboard header already shows the business name
-            title: Text(_selectedIndex == 0
-                ? AppLocalizations.of(context)!.dashboard
-                : business?.name ?? 'Owner Dashboard'),
-            actions: const [
-              LanguageSelector(),
-            ],
+            title: Text(
+              _selectedIndex == 0 ? AppLocalizations.of(context)!.dashboard : business?.name ?? 'Owner Dashboard',
+            ),
+            actions: const [LanguageSelector()],
           ),
           drawer: _buildDrawer(),
           body: _getScreen(),
@@ -153,10 +149,7 @@ Future<void> _loadDashboardData() async {
         children: [
           DrawerHeader(
             decoration: BoxDecoration(color: Colors.blue),
-            child: Text(
-              l10n.menu,
-              style: TextStyle(color: Colors.white, fontSize: 24),
-            ),
+            child: Text(l10n.menu, style: TextStyle(color: Colors.white, fontSize: 24)),
           ),
           ListTile(
             leading: Icon(Icons.dashboard),
@@ -275,17 +268,11 @@ Future<void> _loadDashboardData() async {
             title: const Text('Change Password'),
             onTap: () {
               Navigator.pop(context);
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
-              );
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChangePasswordScreen()));
             },
           ),
           const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: Text(l10n.logout),
-            onTap: _logout,
-          ),
+          ListTile(leading: const Icon(Icons.logout, color: Colors.red), title: Text(l10n.logout), onTap: _logout),
         ],
       ),
     );

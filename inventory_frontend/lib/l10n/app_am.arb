@@ -766,5 +766,7 @@
     "logoutAnyway": "ለማንኛውም ውጣ",
     "saleSavedOffline": "ሽያጩ በስልኩ ላይ ተቀምጧል። ግንኙነት ሲመለስ ይመሳሰላል።",
     "priceNotUpdated": "ሽያጩ ተመዝግቧል፣ ግን አዲሱ ዋጋ አልተቀመጠም፡ {reason}",
-    "loadFailedNoData": "መረጃ መጫን አልተቻለም። ግንኙነትዎን ያረጋግጡ እና እንደገና ይሞክሩ።"
+    "loadFailedNoData": "መረጃ መጫን አልተቻለም። ግንኙነትዎን ያረጋግጡ እና እንደገና ይሞክሩ።",
+    "dashYourSales": "የእርስዎ ሽያጮች",
+    "dashAverageSale": "አማካይ ሽያጭ"
 }

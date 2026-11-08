@@ -748,5 +748,7 @@
     "saleSavedOffline": "Sale saved on the phone. It will sync when the connection returns.",
     "priceNotUpdated": "Sale recorded, but the new price could not be saved: {reason}",
     "@priceNotUpdated": {"placeholders":{"reason":{"type":"String"}}},
-    "loadFailedNoData": "Couldn't load data. Check your connection and try again."
+    "loadFailedNoData": "Couldn't load data. Check your connection and try again.",
+    "dashYourSales": "Your sales",
+    "dashAverageSale": "Avg. sale"
 }

@@ -182,13 +182,20 @@ export const getSalesByUser = async (req, res) => {
   }
 }
 
+/**
+ * Dashboard numbers. Owners/admins see the whole business; a salesman sees only their own sales
+ * and their shop's stock, without profit figures (purchase prices are owner-only).
+ */
 export const getDashboardStats = async (req, res) => {
   try {
     const businessId = req.user.businessId
+    const isSalesman = req.user.role === "salesman"
+    const salesWhere = isSalesman ? { businessId, salesmanId: req.user.id } : { businessId }
+    const stockWhere = isSalesman ? { businessId, shopId: req.user.shopId ?? null } : { businessId }
     const startOfToday = new Date()
     startOfToday.setHours(0, 0, 0, 0)
     const last30Days = new Date(Date.now() - 30 * DAY_MS)
-    const todayWhere = { businessId, soldTime: { [Op.gte]: startOfToday } }
+    const todayWhere = { ...salesWhere, soldTime: { [Op.gte]: startOfToday } }
 
     // All queries are independent, so run them in parallel
     const [
@@ -203,18 +210,18 @@ export const getDashboardStats = async (req, res) => {
       salesByShopRows,
       stockRows,
     ] = await Promise.all([
-      SoldItem.sum("amount", { where: { businessId } }),
+      SoldItem.sum("amount", { where: salesWhere }),
       SoldItem.sum("amount", { where: todayWhere }),
-      SoldItem.count({ where: { businessId } }),
-      SoldItem.sum("profit", { where: { businessId } }),
-      SoldItem.sum("profit", { where: todayWhere }),
+      SoldItem.count({ where: salesWhere }),
+      isSalesman ? null : SoldItem.sum("profit", { where: salesWhere }),
+      isSalesman ? null : SoldItem.sum("profit", { where: todayWhere }),
       SoldItem.count({ where: todayWhere }),
       SoldItem.findAll({
         attributes: [
           [sequelize.fn("date", sequelize.col("soldTime")), "date"],
           [sequelize.fn("sum", sequelize.col("amount")), "total"],
         ],
-        where: { businessId, soldTime: { [Op.gte]: last30Days } },
+        where: { ...salesWhere, soldTime: { [Op.gte]: last30Days } },
         group: [sequelize.fn("date", sequelize.col("soldTime"))],
         order: [[sequelize.fn("date", sequelize.col("soldTime")), "ASC"]],
       }),
@@ -224,13 +231,16 @@ export const getDashboardStats = async (req, res) => {
           [sequelize.fn("sum", sequelize.col("quantity")), "totalQuantity"],
           [sequelize.fn("sum", sequelize.col("amount")), "totalAmount"],
         ],
-        where: { businessId },
+        where: salesWhere,
         include: [{ model: Item, attributes: ["name"] }],
         group: ["itemId", "Item.id", "Item.name"],
         order: [[sequelize.fn("sum", sequelize.col("amount")), "DESC"]],
         limit: 5,
       }),
-      SoldItem.findAll({
+      // Per-shop breakdown is an owner view
+      isSalesman
+        ? []
+        : SoldItem.findAll({
         attributes: [
           "shopId",
           [sequelize.fn("sum", sequelize.col("amount")), "total"],
@@ -243,7 +253,7 @@ export const getDashboardStats = async (req, res) => {
       }),
       // Items with the least stock left
       AvailableItem.findAll({
-        where: { businessId },
+        where: stockWhere,
         include: [
           { model: Item, as: "item", attributes: ["name"], include: [{ model: Fraction, as: "fractions", attributes: FRACTION_ATTRS }] },
           { model: Shop, as: "shop", attributes: ["name"] },
@@ -279,8 +289,8 @@ export const getDashboardStats = async (req, res) => {
       salesByDay,
       topItems,
       todaySales: todaySales || 0,
-      totalProfit: totalProfit || 0,
-      todayProfit: todayProfit || 0,
+      totalProfit: isSalesman ? null : totalProfit || 0,
+      todayProfit: isSalesman ? null : todayProfit || 0,
       todayCount,
       salesByShop,
       lowStock,
