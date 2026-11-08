@@ -733,6 +733,24 @@
   "passwordResetSuccessfully": "የይልቅት በጠን ተአለተ",
   "invalidOTP": "ዋ�ሚም OTP",
   "otpExpired": "OTP ጊዜ ተልከቱ",
-  "otpSentSuccessfully": "OTP በልቭተ ተአለተ"
-
+  "otpSentSuccessfully": "OTP በልቭተ ተአለተ",
+    "dashGoodMorning": "እንደምን አደሩ",
+    "dashGoodAfternoon": "እንደምን ዋሉ",
+    "dashGoodEvening": "እንደምን አመሹ",
+    "dashTodayOverview": "የዛሬ አጠቃላይ እይታ",
+    "dashRevenue": "ገቢ",
+    "dashProfit": "ትርፍ",
+    "dashTransactions": "ሽያጮች",
+    "dashAllTime": "ጠቅላላ",
+    "dashVsPrevWeek": "{percent} ካለፉት 7 ቀናት ጋር ሲነጻጸር",
+    "dashSalesByShop": "ሽያጭ በሱቅ",
+    "dashLast30Days": "ያለፉት 30 ቀናት",
+    "dashLowStock": "ዝቅተኛ ክምችት",
+    "dashLowStockEmpty": "ሁሉም እቃዎች በበቂ ሁኔታ አሉ",
+    "dashLeft": "{quantity} {unit} ቀርቷል",
+    "dashMargin": "{percent} የትርፍ ህዳግ",
+    "dashSold": "{quantity} ተሽጧል",
+    "dashPlan": "{plan} እቅድ",
+    "dashSalesCount": "{count} ሽያጮች",
+    "dashViewAll": "ሁሉንም ይመልከቱ"
 }

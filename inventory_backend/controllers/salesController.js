@@ -1,4 +1,4 @@
-import { SoldItem, Item, User, Fraction, AvailableItem, sequelize } from "../models/index.js"
+import { SoldItem, Item, User, Fraction, AvailableItem, Shop, sequelize } from "../models/index.js"
 import { Op } from "sequelize"
 
 export const getAllSales = async (req, res) => {
@@ -299,12 +299,73 @@ export const getDashboardStats = async (req, res) => {
       order: [[sequelize.fn("sum", sequelize.col("amount")), "DESC"]],
       limit: 5,
     })
+
+    const businessId = req.user.businessId
+    const todayWhere = { businessId, soldTime: { [Op.gte]: startOfToday } }
+
+    const [totalProfit, todayProfit, todayCount] = await Promise.all([
+      SoldItem.sum("profit", { where: { businessId } }),
+      SoldItem.sum("profit", { where: todayWhere }),
+      SoldItem.count({ where: todayWhere }),
+    ])
+
+    // Revenue per shop over the last 30 days
+    const salesByShopRows = await SoldItem.findAll({
+      attributes: [
+        "shopId",
+        [sequelize.fn("sum", sequelize.col("amount")), "total"],
+        [sequelize.fn("count", sequelize.col("SoldItem.id")), "count"],
+      ],
+      where: {
+        businessId,
+        shopId: { [Op.ne]: null },
+        soldTime: { [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      },
+      include: [{ model: Shop, attributes: ["name"] }],
+      group: ["shopId", "Shop.id", "Shop.name"],
+      order: [[sequelize.fn("sum", sequelize.col("amount")), "DESC"]],
+    })
+    const salesByShop = salesByShopRows.map((r) => ({
+      shopId: r.shopId,
+      shopName: r.Shop?.name ?? "Unknown",
+      total: Number(r.get("total")) || 0,
+      count: Number(r.get("count")) || 0,
+    }))
+
+    // Items with the least stock left, expressed in their unit fraction
+    const stockRows = await AvailableItem.findAll({
+      where: { businessId },
+      include: [
+        { model: Item, as: "item", attributes: ["name"], include: [{ model: Fraction, as: "fractions" }] },
+        { model: Shop, as: "shop", attributes: ["name"] },
+      ],
+      order: [["quantity", "ASC"]],
+      limit: 6,
+    })
+    const lowStock = stockRows.map((r) => {
+      const fractions = r.item?.fractions ?? []
+      const unit = fractions.find((f) => f.isUnit) ?? fractions.find((f) => f.ratio === 1) ?? fractions[0]
+      const ratio = unit?.ratio || 1
+      return {
+        availableItemId: r.id,
+        itemName: r.item?.name ?? "Unknown",
+        shopName: r.shop?.name ?? "Unknown",
+        quantity: Number(r.quantity) / ratio,
+        unit: unit?.name ?? "",
+      }
+    })
+
     res.json({
-      totalSales,
+      totalSales: totalSales || 0,
       salesCount,
       salesByDay,
       topItems,
-      todaySales,
+      todaySales: todaySales || 0,
+      totalProfit: totalProfit || 0,
+      todayProfit: todayProfit || 0,
+      todayCount,
+      salesByShop,
+      lowStock,
     })
   } catch (error) {
     console.error("Error fetching dashboard stats: ", error);

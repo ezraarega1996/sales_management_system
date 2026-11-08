@@ -2,12 +2,13 @@ import 'package:dio/dio.dart';
 import '../models/business.dart';
 import '../models/subscription_plan.dart';
 import '../utils/api.dart';
+import '../config.dart' as config;
 
 class BusinessService {
   final Dio _dio;
   final String baseUrl;
 
-  BusinessService({required this.baseUrl}) : _dio = Dio(BaseOptions(
+  BusinessService({this.baseUrl = config.baseUrl}) : _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
     headers: {'Content-Type': 'application/json'},
   ));
@@ -20,7 +21,7 @@ class BusinessService {
   // Create a new business
   Future<Business> createBusiness(Map<String, dynamic> businessData) async {
     try {
-      final response = await _dio.post('/api/businesses', data: businessData);
+      final response = await _dio.post('/businesses', data: businessData);
       return Business.fromJson(response.data);
     } catch (e) {
       throw Exception('Failed to create business: $e');
@@ -53,7 +54,7 @@ class BusinessService {
   Future<Business> updateBusiness(String id, Business business) async {
     try {
       final response = await _dio.put(
-        '/api/businesses/$id',
+        '/businesses/$id',
         data: business.toJson(),
       );
       return Business.fromJson(response.data);
@@ -71,7 +72,7 @@ class BusinessService {
   ) async {
     try {
       final response = await _dio.put(
-        '/api/businesses/$id/subscription',
+        '/businesses/$id/subscription',
         data: {
           'subscriptionStatus': status,
           'subscriptionPlan': plan,

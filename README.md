@@ -112,6 +112,22 @@ npm install
 npm run dev                 # nodemon server.js on http://localhost:5000
 ```
 
+Load sample data (2 businesses, 3 shops, all roles, catalog, purchases and ~200 sales over the last 14 days):
+
+```bash
+npm run seed              # adds sample data next to existing data
+npm run seed -- --reset   # WIPES all tables first, then seeds
+```
+
+| Role | Username | Password |
+|------|----------|----------|
+| Admin | `admin` | `admin123` |
+| Owner (Addis Mini Market) | `owner1` | `owner123` |
+| Salesman (Bole Branch) | `sales1`, `sales2` | `sales123` |
+| Salesman (Piassa Branch) | `sales3` | `sales123` |
+| Owner (Hawassa Pharmacy) | `owner2` | `owner123` |
+| Salesman (Hawassa Main Shop) | `sales4` | `sales123` |
+
 Or with Docker (starts Postgres and the API together):
 
 ```bash
@@ -134,6 +150,6 @@ flutter run
 
 - `server.js` always listens on port **5000** and ignores `PORT`.
 - If `JWT_SECRET` or `DATABASE_URL` is missing, the server falls back to insecure development defaults.
-- The frontend's API base URL is hardcoded in two places: [lib/config.dart](inventory_frontend/lib/config.dart) (`http://localhost:5000/api`) and [lib/main.dart](inventory_frontend/lib/main.dart) (`BusinessService` → `https://54.91.234.164:5000/api`). Change both when you point the app at a different backend.
+- The frontend's backend address is set in one place: `baseUrl` in [lib/config.dart](inventory_frontend/lib/config.dart). Both `Api` ([lib/utils/api.dart](inventory_frontend/lib/utils/api.dart)) and `BusinessService` read it.
 - The Render deploy ([render.yaml](inventory_backend/render.yaml)) deploys the `development` branch.
 - `.env` files are git-ignored. Copy them from the `.env.example` files.

@@ -31,9 +31,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider.value(value: languageProvider),
         Provider(
-          create: (_) => BusinessService(
-            baseUrl: 'https://54.91.234.164:5000/api',
-          ),
+          create: (_) => BusinessService(),
         ),
         ChangeNotifierProxyProvider<BusinessService, BusinessProvider>(
           create: (context) => BusinessProvider(

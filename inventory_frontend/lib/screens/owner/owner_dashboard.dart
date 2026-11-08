@@ -13,12 +13,10 @@ import 'package:inventory_frontend/screens/owner/users_screen.dart';
 import 'package:inventory_frontend/screens/owner/boughts_screen.dart';
 import 'package:inventory_frontend/screens/available_items_screen.dart';
 import 'package:inventory_frontend/screens/owner/shops_screen.dart';
+import 'package:inventory_frontend/screens/owner/owner_dashboard_view.dart';
 import 'package:inventory_frontend/screens/summary_screen.dart';
-import 'package:inventory_frontend/widgets/dashboard_card.dart';
-import 'package:inventory_frontend/widgets/dashboard_chart.dart';
 import 'package:inventory_frontend/widgets/language_selector.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:intl/intl.dart';
 
 class OwnerDashboard extends StatefulWidget {
   const OwnerDashboard({super.key});
@@ -34,7 +32,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   @override
   void initState() {
     super.initState();
-    _loadDashboardData();
+    // Defer until after the first frame: the providers call notifyListeners()
+    // synchronously, which is not allowed while the widget tree is building.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadDashboardData());
   }
 
 Future<void> _loadDashboardData() async {
@@ -113,195 +113,11 @@ Future<void> _loadDashboardData() async {
   }
 
   Widget _buildDashboard() {
-    return Consumer2<SalesProvider, BusinessProvider>(
-      builder: (context, salesProvider, businessProvider, child) {
-        final stats = salesProvider.dashboardStats;
-        final business = businessProvider.currentBusiness;
-        final l10n = AppLocalizations.of(context)!;
-        final currency = NumberFormat('#,##0.00');
-        final currencySymbol = l10n.currencySymbol;
-
-        return RefreshIndicator(
-          onRefresh: _loadDashboardData,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      l10n.dashboard,
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh),
-                      onPressed: _loadDashboardData,
-                      tooltip: l10n.refresh,
-                    ),
-                  ],
-                ),
-                if (business != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4.0, bottom: 12.0),
-                    child: Text(
-                      business.name,
-                      style: TextStyle(
-                        color: Theme.of(context).textTheme.bodySmall?.color,
-                        fontSize: 14,
-                      ),
-                    ),
-                  )
-                else
-                  const SizedBox(height: 12),
-
-                if (_isLoading)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24.0),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (salesProvider.error != null)
-                  Card(
-                    color: Theme.of(context).colorScheme.errorContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.error_outline,
-                            color: Theme.of(context).colorScheme.onErrorContainer,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              salesProvider.error!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onErrorContainer,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else if (stats != null)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DashboardCard(
-                              title: l10n.totalSales,
-                              value: '$currencySymbol${currency.format((stats['totalSales'] ?? 0).toDouble())}',
-                              icon: Icons.attach_money,
-                              color: Colors.green,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: DashboardCard(
-                              title: l10n.salesCount,
-                              value: '${stats['salesCount'] ?? 0}',
-                              icon: Icons.shopping_cart,
-                              color: Colors.blue,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-                      Text(
-                        l10n.todaysSalesBySalesman,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-                      if (salesProvider.todaySalesData.isEmpty)
-                        Text(l10n.noSalesToday)
-                      else
-                        Column(
-                          children: salesProvider.todaySalesData.map((salesData) {
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                leading: const Icon(Icons.person_outline),
-                                title: Text(salesData.salesmanName ?? l10n.unknownSalesman),
-                                trailing: Text(
-                                  '$currencySymbol${currency.format(salesData.totalAmount)}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-
-                      const SizedBox(height: 24),
-                      Text(
-                        l10n.salesTrend,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 200,
-                        child: DashboardChart(
-                          data: stats['salesByDay'] ?? [],
-                          emptyText: l10n.noData,
-                          currencySymbol: currencySymbol,
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-                      Text(
-                        l10n.topSellingItems,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-                      if (((stats['topItems'] as List?)?.isEmpty ?? true))
-                        Text(l10n.noItemsFound)
-                      else
-                        ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: (stats['topItems'] as List?)?.length ?? 0,
-                          itemBuilder: (context, index) {
-                            final item = (stats['topItems'] as List)[index];
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                title: Text(
-                                  item['Item']['name'],
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                subtitle: Text('${l10n.quantityLabel}: ${item['totalQuantity']}'),
-                                trailing: Text(
-                                  '$currencySymbol${currency.format((item['totalAmount'] ?? 0).toDouble())}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green,
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
+    return OwnerDashboardView(
+      isLoading: _isLoading,
+      onRefresh: _loadDashboardData,
+      onNavigate: _onItemTapped,
     );
-  }
-
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'N/A';
-    return '${date.day}/${date.month}/${date.year}';
   }
 
   @override
@@ -312,7 +128,10 @@ Future<void> _loadDashboardData() async {
         
         return Scaffold(
           appBar: AppBar(
-            title: Text(business?.name ?? 'Owner Dashboard'),
+            // The dashboard header already shows the business name
+            title: Text(_selectedIndex == 0
+                ? AppLocalizations.of(context)!.dashboard
+                : business?.name ?? 'Owner Dashboard'),
             actions: const [
               LanguageSelector(),
             ],

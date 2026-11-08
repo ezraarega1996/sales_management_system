@@ -130,10 +130,8 @@ class SalesProvider with ChangeNotifier {
         }
         _sales.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-        // Calculate today's sales
-        final today = DateTime.now();
-        final todayStart = DateTime(today.year, today.month, today.day);
-        _todaySales = response['todaySales'];
+        // JSON numbers without a fraction (e.g. 4955) decode as int, so convert via num
+        _todaySales = (response['todaySales'] as num?)?.toDouble();
       } else {
         _error = 'Failed to fetch dashboard stats';
       }
