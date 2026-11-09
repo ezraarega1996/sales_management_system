@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
@@ -46,6 +48,11 @@ class PosScreen extends StatefulWidget {
 class _PosScreenState extends State<PosScreen> {
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
+  final Map<String, GlobalKey> _rowKeys = {}; // stockId -> row, to scroll it back into view
+  String? _highlightId;
+  final _listController = ScrollController();
+  List<String> _visibleIds = const []; // stock ids in the order shown, from the last build
+  Timer? _highlightTimer;
   final Map<String, String> _rowUnit = {}; // stockId -> fractionId chosen on the row
   String _query = '';
   String? _categoryId;
@@ -73,6 +80,8 @@ class _PosScreenState extends State<PosScreen> {
   void dispose() {
     _searchController.dispose();
     _searchFocus.dispose();
+    _highlightTimer?.cancel();
+    _listController.dispose();
     super.dispose();
   }
 
@@ -103,13 +112,8 @@ class _PosScreenState extends State<PosScreen> {
     switch (basket.add(stock, unit, quantity: quantity)) {
       case BasketResult.ok:
         HapticFeedback.selectionClick();
-        // Found by search: clear it and keep the keyboard up so the next item can be typed at once
         if (_query.isNotEmpty) {
-          setState(() {
-            _searchController.clear();
-            _query = '';
-          });
-          _searchFocus.requestFocus();
+          _clearSearchKeepTyping(stock.id);
           _snack(l10n.posAddedItem(stock.item?.name ?? '', '${_qtyFormat.format(quantity)} ${unit.name}'));
         }
       case BasketResult.notEnoughStock:
@@ -146,6 +150,47 @@ class _PosScreenState extends State<PosScreen> {
     if (line == null) return;
     basket.setQuantity(line, line.quantity > 1 ? line.quantity - 1 : 0);
     HapticFeedback.selectionClick();
+    if (_query.isNotEmpty) _clearSearchKeepTyping(stock.id);
+  }
+
+  /// After + or − on a searched item: clear the search and keep the keyboard up for the next item,
+  /// but scroll the item just tapped back into view and highlight it briefly so it doesn't vanish.
+  void _clearSearchKeepTyping(String stockId) {
+    setState(() {
+      _searchController.clear();
+      _query = '';
+      _highlightId = stockId;
+    });
+    _searchFocus.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToRow(stockId));
+    _highlightTimer?.cancel();
+    _highlightTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _highlightId = null);
+    });
+  }
+
+  /// Brings a row into view. Rows far down the list are built lazily (not yet on screen), so first
+  /// jump close to where it should be, estimated from its position and a built row's height, then
+  /// let [Scrollable.ensureVisible] place it exactly once it exists.
+  Future<void> _scrollToRow(String stockId, {bool estimated = false}) async {
+    if (!mounted) return;
+    final rowContext = _rowKeys[stockId]?.currentContext;
+    if (rowContext != null && rowContext.mounted) {
+      try {
+        await Scrollable.ensureVisible(rowContext, alignment: 0.2, duration: const Duration(milliseconds: 250));
+        return;
+      } catch (_) {
+        // Right after the list changes, the row can still be a leftover from the search results
+        // with no place in the new list yet; fall through and jump near it instead.
+      }
+    }
+    final index = _visibleIds.indexOf(stockId);
+    if (estimated || index == -1 || !_listController.hasClients) return;
+    final builtRow = _visibleIds.map((id) => _rowKeys[id]?.currentContext).nonNulls.firstOrNull;
+    final rowHeight = (builtRow?.size?.height ?? 80) + 8;
+    final position = _listController.position;
+    _listController.jumpTo((index * rowHeight).clamp(position.minScrollExtent, position.maxScrollExtent));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToRow(stockId, estimated: true));
   }
 
   /// Long-press on an item: type how many to add (e.g. 12) instead of tapping + repeatedly.
@@ -227,6 +272,7 @@ class _PosScreenState extends State<PosScreen> {
     final usedCategories = stock.map((s) => s.item?.categoryId).whereType<String>().toSet();
     final showShopName = (auth.isOwner || auth.isAdmin) && stock.map((s) => s.shopId).toSet().length > 1;
     final filtered = stock.where((s) => _matches(s, categoryNames)).toList();
+    _visibleIds = [for (final s in filtered) s.id];
     final browsing = _query.isEmpty && _categoryId == null;
     final frequent = browsing ? _frequent(stock) : const <AvailableItem>[];
 
@@ -243,6 +289,7 @@ class _PosScreenState extends State<PosScreen> {
       content = RefreshIndicator(
         onRefresh: () => _load(force: true),
         child: ListView(
+          controller: _listController,
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
           children: [
@@ -269,6 +316,8 @@ class _PosScreenState extends State<PosScreen> {
               Padding(padding: const EdgeInsets.only(top: 48), child: Center(child: Text(l10n.posNoMatch))),
             for (final s in filtered)
               _StockRow(
+                key: _rowKeys.putIfAbsent(s.id, GlobalKey.new),
+                highlighted: _highlightId == s.id,
                 stock: s,
                 unit: _unitFor(s)!,
                 lineQty: basket.quantityOf(s.id, _unitFor(s)!.id),
@@ -384,8 +433,11 @@ class _StockRow extends StatelessWidget {
   final VoidCallback onAdd;
   final VoidCallback onAddQuantity;
   final VoidCallback onRemoveOne;
+  final bool highlighted;
 
   const _StockRow({
+    super.key,
+    required this.highlighted,
     required this.stock,
     required this.unit,
     required this.lineQty,
@@ -409,7 +461,12 @@ class _StockRow extends StatelessWidget {
     return Card(
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: soldOut ? scheme.surfaceContainerHighest.withValues(alpha: 0.5) : scheme.surfaceContainerLow,
+      color:
+          highlighted
+              ? scheme.primaryContainer
+              : soldOut
+              ? scheme.surfaceContainerHighest.withValues(alpha: 0.5)
+              : scheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       clipBehavior: Clip.antiAlias,
       // The whole row is a big target: tap adds one, long-press asks how many
@@ -477,31 +534,23 @@ class _StockRow extends StatelessWidget {
                 ],
               ),
               const SizedBox(width: 4),
-              // In the basket: − count + stepper; otherwise a single +. No tooltip on +, because
-              // long-press means "how many" (announced via semantics instead).
-              if (lineQty > 0) ...[
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onRemoveOne,
-                  icon: const Icon(Icons.remove_circle_outline),
-                ),
-                GestureDetector(
-                  onTap: onAddQuantity,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 24),
-                    child: Text(
-                      _qtyFormat.format(lineQty),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                    ),
+              // Always [−] [+]; the badge on + shows how many of this unit are in the basket. No tooltip
+              // on +, because long-press means "how many" (announced via semantics instead).
+              IconButton.outlined(
+                visualDensity: VisualDensity.compact,
+                onPressed: lineQty > 0 ? onRemoveOne : null,
+                icon: const Icon(Icons.remove),
+              ),
+              const SizedBox(width: 4),
+              Badge(
+                isLabelVisible: lineQty > 0,
+                label: Text(_qtyFormat.format(lineQty)),
+                child: Semantics(
+                  label: l10n.posHoldForQuantity,
+                  child: GestureDetector(
+                    onLongPress: soldOut ? null : onAddQuantity,
+                    child: IconButton.filledTonal(onPressed: soldOut ? null : onAdd, icon: const Icon(Icons.add)),
                   ),
-                ),
-              ],
-              Semantics(
-                label: l10n.posHoldForQuantity,
-                child: GestureDetector(
-                  onLongPress: soldOut ? null : onAddQuantity,
-                  child: IconButton.filledTonal(onPressed: soldOut ? null : onAdd, icon: const Icon(Icons.add)),
                 ),
               ),
             ],

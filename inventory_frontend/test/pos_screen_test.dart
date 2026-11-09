@@ -67,7 +67,8 @@ Fraction unit(String item, String name, double ratio, double price, {bool isUnit
 void main() {
   late BasketProvider basket;
 
-  Future<void> pumpPos(WidgetTester tester) async {
+  /// [fillers] adds that many extra items before "Zebra Juice" so the list has to scroll.
+  Future<void> pumpPos(WidgetTester tester, {int fillers = 0}) async {
     SharedPreferences.setMockInitialValues({});
     final outbox = SaleOutbox(retryInterval: null);
     basket = BasketProvider();
@@ -77,6 +78,9 @@ void main() {
         unit('coke', 'Crate', 24, 576),
       ], 50),
       stock('sugar', 'Sugar', 'food', [unit('sugar', 'kg', 1, 140, isUnit: true)], 20),
+      for (var i = 0; i < fillers; i++)
+        stock('f$i', 'Filler $i', 'food', [unit('f$i', 'Piece', 1, 10, isUnit: true)], 10),
+      if (fillers > 0) stock('zebra', 'Zebra Juice', 'bev', [unit('zebra', 'Bottle', 1, 30, isUnit: true)], 10),
     ];
     await tester.pumpWidget(
       MultiProvider(
@@ -159,26 +163,77 @@ void main() {
     expect(find.textContaining('Not enough stock'), findsOneWidget);
   });
 
-  testWidgets('the − button on a row takes one back out of the basket', (tester) async {
+  Finder minusOf(String name) =>
+      find.descendant(of: find.widgetWithText(Card, name), matching: find.widgetWithIcon(IconButton, Icons.remove));
+  bool enabled(WidgetTester tester, Finder button) => tester.widget<IconButton>(button).onPressed != null;
+  Finder badgeOf(String name) => find.descendant(of: find.widgetWithText(Card, name), matching: find.byType(Badge));
+
+  testWidgets('every row always shows − and +; − is disabled until the item is in the basket', (tester) async {
     await pumpPos(tester);
+
+    expect(minusOf('Coca-Cola'), findsOneWidget);
+    expect(minusOf('Sugar'), findsOneWidget);
+    expect(enabled(tester, minusOf('Coca-Cola')), isFalse);
 
     await tester.tap(addButtonOf('Coca-Cola'));
     await tester.tap(addButtonOf('Coca-Cola'));
     await tester.pumpAndSettle();
     expect(basket.lines.single.quantity, 2);
+    expect(tester.widget<Badge>(badgeOf('Coca-Cola')).isLabelVisible, isTrue);
+    expect(find.descendant(of: badgeOf('Coca-Cola'), matching: find.text('2')), findsOneWidget);
 
-    final minus = find.descendant(
-      of: find.widgetWithText(Card, 'Coca-Cola'),
-      matching: find.byIcon(Icons.remove_circle_outline),
-    );
-    await tester.tap(minus);
+    await tester.tap(minusOf('Coca-Cola'));
     await tester.pumpAndSettle();
     expect(basket.lines.single.quantity, 1);
 
-    await tester.tap(minus);
+    await tester.tap(minusOf('Coca-Cola'));
     await tester.pumpAndSettle();
     expect(basket.isEmpty, isTrue);
-    expect(minus, findsNothing, reason: 'stepper disappears when the item leaves the basket');
+    expect(minusOf('Coca-Cola'), findsOneWidget, reason: '− stays visible');
+    expect(enabled(tester, minusOf('Coca-Cola')), isFalse);
+    expect(tester.widget<Badge>(badgeOf('Coca-Cola')).isLabelVisible, isFalse);
+  });
+
+  testWidgets('− on a searched item also clears the search and keeps the keyboard up', (tester) async {
+    await pumpPos(tester);
+    await tester.tap(addButtonOf('Coca-Cola'));
+    await tester.tap(addButtonOf('Coca-Cola'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(search(), 'coca');
+    await tester.pumpAndSettle();
+    await tester.tap(minusOf('Coca-Cola'));
+    await tester.pumpAndSettle();
+
+    expect(basket.lines.single.quantity, 1);
+    expect(tester.widget<TextField>(search()).controller!.text, isEmpty);
+    expect(tester.widget<TextField>(search()).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('the item just added stays in view (scrolled to and highlighted) after the search clears', (
+    tester,
+  ) async {
+    await pumpPos(tester, fillers: 15);
+    expect(find.text('Zebra Juice').hitTestable(), findsNothing, reason: 'starts below the fold');
+
+    await tester.enterText(search(), 'zebra');
+    await tester.pumpAndSettle();
+    await tester.tap(addButtonOf('Zebra Juice'));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<TextField>(search()).controller!.text, isEmpty);
+    expect(find.text('Filler 14'), findsOneWidget, reason: 'full list is back (neighbouring row shown)');
+    expect(find.text('Zebra Juice').hitTestable(), findsOneWidget, reason: 'scrolled back into view');
+    final card = tester.widget<Card>(find.widgetWithText(Card, 'Zebra Juice'));
+    final context = tester.element(find.widgetWithText(Card, 'Zebra Juice'));
+    expect(card.color, Theme.of(context).colorScheme.primaryContainer, reason: 'highlighted');
+
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<Card>(find.widgetWithText(Card, 'Zebra Juice')).color,
+      isNot(Theme.of(context).colorScheme.primaryContainer),
+    );
   });
 
   testWidgets('tapping anywhere on the row adds one', (tester) async {
