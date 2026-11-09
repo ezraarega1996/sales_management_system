@@ -775,5 +775,8 @@
     "posAdd": "Add",
     "posPricePer": "Price per {unit}",
     "@posPricePer": {"placeholders":{"unit":{"type":"String"}}},
-    "posCashShort": "Cash is less than the total"
+    "posCashShort": "Cash is less than the total",
+    "posAddedItem": "Added {item} ×{quantity}",
+    "@posAddedItem": {"placeholders":{"item":{"type":"String"},"quantity":{"type":"String"}}},
+    "posHoldForQuantity": "Add (hold to enter how many)"
 }

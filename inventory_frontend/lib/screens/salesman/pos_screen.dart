@@ -45,6 +45,7 @@ class PosScreen extends StatefulWidget {
 
 class _PosScreenState extends State<PosScreen> {
   final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
   final Map<String, String> _rowUnit = {}; // stockId -> fractionId chosen on the row
   String _query = '';
   String? _categoryId;
@@ -71,6 +72,7 @@ class _PosScreenState extends State<PosScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -101,11 +103,63 @@ class _PosScreenState extends State<PosScreen> {
     switch (basket.add(stock, unit, quantity: quantity)) {
       case BasketResult.ok:
         HapticFeedback.selectionClick();
+        // Found by search: clear it and keep the keyboard up so the next item can be typed at once
+        if (_query.isNotEmpty) {
+          setState(() {
+            _searchController.clear();
+            _query = '';
+          });
+          _searchFocus.requestFocus();
+          _snack(l10n.posAddedItem(stock.item?.name ?? '', '${_qtyFormat.format(quantity)} ${unit.name}'));
+        }
       case BasketResult.notEnoughStock:
         _snack(l10n.posNotEnoughStock(_qtyFormat.format(basket.remainingFor(stock, unit)), unit.name));
       case BasketResult.otherShop:
         _snack(l10n.posOtherShop);
     }
+  }
+
+  /// Enter in the search box adds the item when the search narrowed it down to one sellable item;
+  /// otherwise the keyboard stays up to keep typing. Matches are worked out now, not taken from
+  /// the last build, so a fast "type + enter" still sees the latest text.
+  void _submitSearch() {
+    final basket = context.read<BasketProvider>();
+    final categoryNames = {for (final c in context.read<CategoryProvider>().categories) c.id: c.name};
+    final sellable =
+        context
+            .read<AvailableItemProvider>()
+            .availableItems
+            .where((s) => _defaultUnit(s) != null && _matches(s, categoryNames))
+            .where((s) => basket.remainingFor(s, _unitFor(s)!) >= 1 - 1e-9)
+            .toList();
+    if (_query.isNotEmpty && sellable.length == 1) {
+      _add(sellable.single, _unitFor(sellable.single)!);
+    } else {
+      _searchFocus.requestFocus();
+    }
+  }
+
+  /// The − on a row: take one of that unit back out of the basket.
+  void _removeOne(AvailableItem stock, Fraction unit) {
+    final basket = context.read<BasketProvider>();
+    final line = basket.lines.where((l) => l.stock.id == stock.id && l.fraction.id == unit.id).firstOrNull;
+    if (line == null) return;
+    basket.setQuantity(line, line.quantity > 1 ? line.quantity - 1 : 0);
+    HapticFeedback.selectionClick();
+  }
+
+  /// Long-press on an item: type how many to add (e.g. 12) instead of tapping + repeatedly.
+  Future<void> _addWithQuantity(AvailableItem stock, Fraction unit) async {
+    final l10n = AppLocalizations.of(context)!;
+    final remaining = context.read<BasketProvider>().remainingFor(stock, unit);
+    final quantity = await _askNumber(
+      context,
+      title: '${stock.item?.name ?? ''} · ${unit.name}',
+      initial: 1,
+      helper: l10n.dashLeft(_qtyFormat.format(remaining), unit.name),
+      quickValues: const [2, 5, 10, 12],
+    );
+    if (quantity != null && quantity > 0 && mounted) _add(stock, unit, quantity: quantity);
   }
 
   void _snack(String message) {
@@ -199,10 +253,13 @@ class _PosScreenState extends State<PosScreen> {
                 runSpacing: 4,
                 children: [
                   for (final s in frequent)
-                    ActionChip(
-                      avatar: const Icon(Icons.add, size: 18),
-                      label: Text(s.item?.name ?? ''),
-                      onPressed: () => _add(s, _unitFor(s)!),
+                    GestureDetector(
+                      onLongPress: () => _addWithQuantity(s, _unitFor(s)!),
+                      child: ActionChip(
+                        avatar: const Icon(Icons.add, size: 18),
+                        label: Text(s.item?.name ?? ''),
+                        onPressed: () => _add(s, _unitFor(s)!),
+                      ),
                     ),
                 ],
               ),
@@ -214,11 +271,13 @@ class _PosScreenState extends State<PosScreen> {
               _StockRow(
                 stock: s,
                 unit: _unitFor(s)!,
-                inBasket: basket.unitsInBasket(s.id),
+                lineQty: basket.quantityOf(s.id, _unitFor(s)!.id),
                 remaining: basket.remainingFor(s, _unitFor(s)!),
                 shopName: showShopName ? s.shop?.name : null,
                 onUnitChanged: (f) => setState(() => _rowUnit[s.id] = f.id),
                 onAdd: () => _add(s, _unitFor(s)!),
+                onAddQuantity: () => _addWithQuantity(s, _unitFor(s)!),
+                onRemoveOne: () => _removeOne(s, _unitFor(s)!),
               ),
           ],
         ),
@@ -232,8 +291,11 @@ class _PosScreenState extends State<PosScreen> {
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
           child: TextField(
             controller: _searchController,
+            focusNode: _searchFocus,
             onChanged: (v) => setState(() => _query = v.trim()),
             textInputAction: TextInputAction.search,
+            // Enter adds the item when the search narrowed it down to one; otherwise keep typing
+            onSubmitted: (_) => _submitSearch(),
             decoration: InputDecoration(
               hintText: l10n.searchItems,
               prefixIcon: const Icon(Icons.search),
@@ -315,20 +377,24 @@ class _CategoryChip extends StatelessWidget {
 class _StockRow extends StatelessWidget {
   final AvailableItem stock;
   final Fraction unit;
-  final double inBasket; // base units already in the basket
+  final double lineQty; // how many of [unit] are in the basket
   final double remaining; // in [unit]s
   final String? shopName;
   final ValueChanged<Fraction> onUnitChanged;
   final VoidCallback onAdd;
+  final VoidCallback onAddQuantity;
+  final VoidCallback onRemoveOne;
 
   const _StockRow({
     required this.stock,
     required this.unit,
-    required this.inBasket,
+    required this.lineQty,
     required this.remaining,
     required this.shopName,
     required this.onUnitChanged,
     required this.onAdd,
+    required this.onAddQuantity,
+    required this.onRemoveOne,
   });
 
   @override
@@ -339,80 +405,107 @@ class _StockRow extends StatelessWidget {
     final soldOut = remaining < 1 - 1e-9;
     final low = !soldOut && remaining <= 5;
     final stockColor = soldOut ? scheme.outline : (low ? Colors.orange.shade800 : scheme.onSurfaceVariant);
-    final inBasketQty = inBasket / unit.ratio;
 
     return Card(
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 4),
       color: soldOut ? scheme.surfaceContainerHighest.withValues(alpha: 0.5) : scheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    shopName != null ? '${stock.item?.name} · $shopName' : stock.item?.name ?? '',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: soldOut ? scheme.outline : null),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      if (low) Icon(Icons.warning_amber_rounded, size: 14, color: stockColor),
-                      if (low) const SizedBox(width: 2),
-                      Flexible(
-                        child: Text(
-                          soldOut ? l10n.posSoldOut : l10n.dashLeft(_qtyFormat.format(remaining), unit.name),
-                          style: TextStyle(fontSize: 12, color: stockColor),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(_money(context, unit.sellingPrice), style: const TextStyle(fontWeight: FontWeight.w700)),
-                if (fractions.length > 1)
-                  PopupMenuButton<Fraction>(
-                    initialValue: unit,
-                    onSelected: onUnitChanged,
-                    itemBuilder:
-                        (_) => [
-                          for (final f in fractions)
-                            PopupMenuItem(value: f, child: Text('${f.name} · ${_money(context, f.sellingPrice)}')),
-                        ],
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(unit.name, style: TextStyle(fontSize: 12, color: scheme.primary)),
-                          Icon(Icons.arrow_drop_down, size: 18, color: scheme.primary),
-                        ],
+      clipBehavior: Clip.antiAlias,
+      // The whole row is a big target: tap adds one, long-press asks how many
+      child: InkWell(
+        onTap: soldOut ? null : onAdd,
+        onLongPress: soldOut ? null : onAddQuantity,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      shopName != null ? '${stock.item?.name} · $shopName' : stock.item?.name ?? '',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: soldOut ? scheme.outline : null,
                       ),
                     ),
-                  )
-                else
-                  Text(unit.name, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-              ],
-            ),
-            const SizedBox(width: 6),
-            Badge(
-              isLabelVisible: inBasketQty > 0,
-              label: Text(_qtyFormat.format(inBasketQty)),
-              child: IconButton.filledTonal(
-                tooltip: l10n.posAdd,
-                onPressed: soldOut ? null : onAdd,
-                icon: const Icon(Icons.add),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        if (low) Icon(Icons.warning_amber_rounded, size: 14, color: stockColor),
+                        if (low) const SizedBox(width: 2),
+                        Flexible(
+                          child: Text(
+                            soldOut ? l10n.posSoldOut : l10n.dashLeft(_qtyFormat.format(remaining), unit.name),
+                            style: TextStyle(fontSize: 12, color: stockColor),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(_money(context, unit.sellingPrice), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  if (fractions.length > 1)
+                    PopupMenuButton<Fraction>(
+                      initialValue: unit,
+                      onSelected: onUnitChanged,
+                      itemBuilder:
+                          (_) => [
+                            for (final f in fractions)
+                              PopupMenuItem(value: f, child: Text('${f.name} · ${_money(context, f.sellingPrice)}')),
+                          ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(unit.name, style: TextStyle(fontSize: 12, color: scheme.primary)),
+                            Icon(Icons.arrow_drop_down, size: 18, color: scheme.primary),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Text(unit.name, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+                ],
+              ),
+              const SizedBox(width: 4),
+              // In the basket: − count + stepper; otherwise a single +. No tooltip on +, because
+              // long-press means "how many" (announced via semantics instead).
+              if (lineQty > 0) ...[
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onRemoveOne,
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+                GestureDetector(
+                  onTap: onAddQuantity,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 24),
+                    child: Text(
+                      _qtyFormat.format(lineQty),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    ),
+                  ),
+                ),
+              ],
+              Semantics(
+                label: l10n.posHoldForQuantity,
+                child: GestureDetector(
+                  onLongPress: soldOut ? null : onAddQuantity,
+                  child: IconButton.filledTonal(onPressed: soldOut ? null : onAdd, icon: const Icon(Icons.add)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -501,18 +594,43 @@ class _BasketBar extends StatelessWidget {
   }
 }
 
-Future<double?> _askNumber(BuildContext context, {required String title, required double initial}) {
-  final controller = TextEditingController(text: _qtyFormat.format(initial).replaceAll(',', ''));
+/// Asks for a number. [quickValues] are one-tap answers (e.g. ×2, ×5, ×10, ×12).
+Future<double?> _askNumber(
+  BuildContext context, {
+  required String title,
+  required double initial,
+  String? helper,
+  List<double> quickValues = const [],
+}) {
+  final controller = TextEditingController(text: _qtyFormat.format(initial).replaceAll(',', ''))
+    ..selection = TextSelection(baseOffset: 0, extentOffset: _qtyFormat.format(initial).replaceAll(',', '').length);
   return showDialog<double>(
     context: context,
     builder:
         (context) => AlertDialog(
           title: Text(title),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            onSubmitted: (v) => Navigator.pop(context, double.tryParse(v.trim())),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(helperText: helper),
+                onSubmitted: (v) => Navigator.pop(context, double.tryParse(v.trim())),
+              ),
+              if (quickValues.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final v in quickValues)
+                      ActionChip(label: Text('×${_qtyFormat.format(v)}'), onPressed: () => Navigator.pop(context, v)),
+                  ],
+                ),
+              ],
+            ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: Text(AppLocalizations.of(context)!.cancel)),

@@ -790,5 +790,7 @@
     "posClearBasket": "ቅርጫቱን አጽዳ",
     "posAdd": "ጨምር",
     "posPricePer": "ዋጋ በ{unit}",
-    "posCashShort": "የተቀበሉት ገንዘብ ከጠቅላላው ያነሰ ነው"
+    "posCashShort": "የተቀበሉት ገንዘብ ከጠቅላላው ያነሰ ነው",
+    "posAddedItem": "{item} ×{quantity} ተጨምሯል",
+    "posHoldForQuantity": "ጨምር (ብዛት ለማስገባት ይያዙ)"
 }
