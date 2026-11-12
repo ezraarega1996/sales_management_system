@@ -1,4 +1,4 @@
-import { Fraction, Item } from "../models/index.js"
+import { Fraction, Item, ItemBought, SoldItem } from "../models/index.js"
 import { Op } from "sequelize"
 
 export const getAllFractions = async (req, res) => {
@@ -37,6 +37,9 @@ export const getFractionById = async (req, res) => {
 export const createFraction = async (req, res) => {
   try {
     const { name, ratio, sellingPrice, purchasePrice, itemId, isUnit } = req.body
+    if (!(parseFloat(ratio) > 0)) {
+      return res.status(400).json({ message: "Ratio must be more than 0" })
+    }
 
     // Check if item exists and belongs to the business
     const item = await Item.findOne({
@@ -89,9 +92,16 @@ export const createFraction = async (req, res) => {
   }
 }
 
+/** A unit is in use once a purchase or sale was recorded with it. */
+const fractionInUse = async (fractionId) =>
+  (await ItemBought.count({ where: { fractionId } })) > 0 || (await SoldItem.count({ where: { fractionId } })) > 0
+
 export const updateFraction = async (req, res) => {
   try {
     const { name, ratio, sellingPrice, purchasePrice, isUnit } = req.body
+    if (ratio !== undefined && !(parseFloat(ratio) > 0)) {
+      return res.status(400).json({ message: "Ratio must be more than 0" })
+    }
     const fraction = await Fraction.findOne({
       where: {
         id: req.params.id,
@@ -119,6 +129,12 @@ export const updateFraction = async (req, res) => {
           message: "An item can only have one unit fraction. Please unmark the existing unit fraction first." 
         })
       }
+    }
+
+    if (ratio !== undefined && Math.abs(parseFloat(ratio) - parseFloat(fraction.ratio)) > 1e-9 && (await fractionInUse(fraction.id))) {
+      return res.status(400).json({
+        message: "This unit is already used in purchases or sales, so its ratio can't change. Add a new unit instead.",
+      })
     }
 
     // Update fraction
@@ -151,6 +167,9 @@ export const deleteFraction = async (req, res) => {
 
     if (!fraction) {
       return res.status(404).json({ message: "Fraction not found" })
+    }
+    if (await fractionInUse(fraction.id)) {
+      return res.status(400).json({ message: "This unit is already used in purchases or sales, so it can't be deleted." })
     }
 
     await fraction.destroy()

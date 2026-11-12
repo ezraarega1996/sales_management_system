@@ -5,11 +5,8 @@ import 'package:inventory_frontend/screens/admin/admin_dashboard.dart';
 import 'package:inventory_frontend/screens/auth/business_registration_screen.dart';
 import 'package:inventory_frontend/screens/owner/owner_dashboard.dart';
 import 'package:inventory_frontend/screens/salesman/salesman_dashboard.dart';
-import 'package:inventory_frontend/widgets/custom_button.dart';
-import 'package:inventory_frontend/widgets/custom_text_field.dart';
-import 'package:inventory_frontend/widgets/language_selector.dart';
+import 'package:inventory_frontend/widgets/auth_layout.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -32,33 +29,25 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    if (_formKey.currentState!.validate()) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final success = await authProvider.login(
-        _usernameController.text.trim(),
-        _passwordController.text,
-      );
-      if (!mounted) return;
-      if (success) {
-        if (authProvider.isAdmin) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const AdminDashboard())
-          );
-        } else if (authProvider.isOwner) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const OwnerDashboard())
-          );
-        } else {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const SalesmanDashboard())
-          );
-        }
-      } else {
-        final l10n = AppLocalizations.of(context)!;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(authProvider.error ?? l10n.loginFailed))
-        );
-      }
+    FocusScope.of(context).unfocus();
+    if (!_formKey.currentState!.validate()) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.login(_usernameController.text.trim(), _passwordController.text);
+    if (!mounted) return;
+
+    if (success) {
+      final Widget home =
+          authProvider.isAdmin
+              ? const AdminDashboard()
+              : authProvider.isOwner
+              ? const OwnerDashboard()
+              : const SalesmanDashboard();
+      // Clear the welcome page from the stack so Back doesn't return to it
+      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => home), (_) => false);
+    } else {
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(authProvider.error ?? l10n.loginFailed)));
     }
   }
 
@@ -66,96 +55,64 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final l10n = AppLocalizations.of(context)!;
-    
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const LanguageSelector(),
-                  Text(
-                    l10n.loginSubtitle,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                  ),
-                  Image.asset(
-                    'assets/images/logo.jpg',
-                    width: MediaQuery.of(context).size.width,
-                    height: 300,
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    l10n.loginTitle,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  CustomTextField(
-                    controller: _usernameController,
-                    labelText: l10n.usernameLabel,
-                    prefixIcon: Icons.person,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return l10n.usernameRequired;
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  CustomTextField(
-                    controller: _passwordController,
-                    labelText: l10n.passwordLabel,
-                    prefixIcon: Icons.lock,
-                    obscureText: _obscurePassword,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword ? Icons.visibility : Icons.visibility_off,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return l10n.passwordRequired;
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                    CustomButton(
-                    text: l10n.loginButton,
-                    isLoading: authProvider.isLoading,
-                    onPressed: _login,
-                    textColor: Colors.white,
-                  ),
-                  const SizedBox(height: 16),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const BusinessRegistrationScreen())
-                      );
-                    },
-                    child: Text(l10n.registerBusiness),
-                  ),
-                ],
-              ),
+    final theme = Theme.of(context);
+
+    return AuthLayout(
+      title: l10n.loginWelcomeBack,
+      subtitle: l10n.loginWelcomeSubtitle,
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Flexible(
+            child: Text(
+              l10n.loginNoAccount,
+              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
+          ),
+          TextButton(
+            onPressed:
+                () => Navigator.of(
+                  context,
+                ).pushReplacement(MaterialPageRoute(builder: (_) => const BusinessRegistrationScreen())),
+            child: Text(l10n.registerBusiness, style: const TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+      child: Form(
+        key: _formKey,
+        child: AutofillGroup(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextFormField(
+                controller: _usernameController,
+                decoration: authInputDecoration(context, label: l10n.usernameLabel, icon: Icons.person_outline_rounded),
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.username],
+                autocorrect: false,
+                validator: (value) => (value == null || value.trim().isEmpty) ? l10n.usernameRequired : null,
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                decoration: authInputDecoration(
+                  context,
+                  label: l10n.passwordLabel,
+                  icon: Icons.lock_outline_rounded,
+                  suffix: IconButton(
+                    icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                ),
+                textInputAction: TextInputAction.done,
+                autofillHints: const [AutofillHints.password],
+                onFieldSubmitted: (_) => _login(),
+                validator: (value) => (value == null || value.isEmpty) ? l10n.passwordRequired : null,
+              ),
+              const SizedBox(height: 24),
+              AuthSubmitButton(label: l10n.loginButton, isLoading: authProvider.isLoading, onPressed: _login),
+            ],
           ),
         ),
       ),

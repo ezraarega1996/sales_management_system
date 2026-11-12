@@ -32,19 +32,29 @@ class ItemBought {
   });
 
   factory ItemBought.fromJson(Map<String, dynamic> json) {
+    // The backend includes the purchased unit as 'Fraction'; older payloads used 'fraction'
+    final fractionJson = json['Fraction'] ?? json['fraction'];
+    Fraction? fraction;
+    if (fractionJson is Map<String, dynamic>) {
+      try {
+        fraction = Fraction.fromJson(fractionJson);
+      } catch (_) {
+        fraction = null;
+      }
+    }
     return ItemBought(
-      id: json['id'],
-      itemId: json['itemId'],
-      fractionId: json['fractionId'],
-      quantity: double.tryParse(json['quantity'].toString()) ?? 0.0,
-      fractionPurchasePrice: double.tryParse(json['fractionPurchasePrice'].toString()) ?? 0.0,
-      fractionSoldPrice: double.tryParse(json['fractionSoldPrice'].toString()) ?? 0.0,
-      expiryDate: json['expiryDate'] != null ? DateTime.parse(json['expiryDate']) : null,
-      businessId: json['businessId'],
-      salesmanId: json['salesmanId'],
-      createdAt: DateTime.parse(json['createdAt'] ?? json['createdTime'] ?? DateTime.now().toIso8601String()),
-      fraction: json['fraction'] != null ? Fraction.fromJson(json['fraction']) : null,
-      availableItemId: json['availableItemId'],
+      id: json['id']?.toString() ?? '',
+      itemId: json['itemId']?.toString() ?? '',
+      fractionId: json['fractionId']?.toString() ?? '',
+      quantity: double.tryParse(json['quantity']?.toString() ?? '') ?? 0.0,
+      fractionPurchasePrice: double.tryParse(json['fractionPurchasePrice']?.toString() ?? '') ?? 0.0,
+      fractionSoldPrice: double.tryParse(json['fractionSoldPrice']?.toString() ?? '') ?? 0.0,
+      expiryDate: json['expiryDate'] != null ? DateTime.tryParse(json['expiryDate'].toString()) : null,
+      businessId: json['businessId']?.toString() ?? '',
+      salesmanId: json['salesmanId']?.toString(),
+      createdAt: DateTime.tryParse((json['createdAt'] ?? json['createdTime'])?.toString() ?? '') ?? DateTime.now(),
+      fraction: fraction,
+      availableItemId: json['availableItemId']?.toString(),
       available_items_count:
           json['available_items_count'] != null ? double.tryParse(json['available_items_count'].toString()) : null,
     );

@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+
+import 'package:inventory_frontend/models/fraction.dart';
 import 'package:inventory_frontend/models/item.dart';
 import 'package:inventory_frontend/providers/item_provider.dart';
-import 'package:inventory_frontend/widgets/custom_button.dart';
-import 'package:inventory_frontend/widgets/custom_text_field.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:inventory_frontend/widgets/auth_layout.dart';
 
+/// Adds a unit (fraction) to an item, listing the units it already has. Closes once the unit
+/// is saved.
 class FractionManagementDialog extends StatefulWidget {
   final Item item;
 
@@ -16,17 +21,16 @@ class FractionManagementDialog extends StatefulWidget {
 }
 
 class _FractionManagementDialogState extends State<FractionManagementDialog> {
+  static final _money = NumberFormat('#,##0.00');
+  static final _num = NumberFormat('#,##0.##');
+  static final _decimal = FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'));
+
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _ratioController = TextEditingController();
   final _sellingPriceController = TextEditingController();
   final _purchasePriceController = TextEditingController();
-  bool _isUnit = false;
-
-  @override
-  void initState() {
-    super.initState();
-  }
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -42,132 +46,211 @@ class _FractionManagementDialogState extends State<FractionManagementDialog> {
 
     final l10n = AppLocalizations.of(context)!;
     final itemProvider = context.read<ItemProvider>();
-    try {
-      final success = await itemProvider.createFraction(
-        widget.item.id,
-        _nameController.text,
-        double.parse(_ratioController.text),
-        double.parse(_sellingPriceController.text),
-        double.parse(_purchasePriceController.text),
-        isUnit: _isUnit,
-      );
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
 
-      if (success) {
-        _nameController.clear();
-        _ratioController.clear();
-        _sellingPriceController.clear();
-        _purchasePriceController.clear();
-        setState(() => _isUnit = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.fractionAddedSuccessfully)));
-        Navigator.of(context).pop(); // Close dialog after successful addition
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+    setState(() => _isSubmitting = true);
+    final success = await itemProvider.createFraction(
+      widget.item.id,
+      _nameController.text.trim(),
+      double.parse(_ratioController.text),
+      double.parse(_sellingPriceController.text),
+      double.parse(_purchasePriceController.text),
+      isUnit: false,
+    );
+
+    if (success) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.fractionAddedSuccessfully)));
+      navigator.pop(); // Close the dialog after a successful addition
+      return;
     }
+    messenger.showSnackBar(SnackBar(content: Text(itemProvider.error ?? l10n.error), backgroundColor: errorColor));
+    if (mounted) setState(() => _isSubmitting = false);
+  }
+
+  String? _validRatio(String? v, AppLocalizations l10n) {
+    if (v == null || v.trim().isEmpty) return l10n.pleaseEnterRatio;
+    final n = double.tryParse(v);
+    if (n == null) return l10n.pleaseEnterValidNumber;
+    if (n <= 0) return l10n.catalogRatioMustBePositive;
+    return null;
+  }
+
+  String? _validPrice(String? v, AppLocalizations l10n) {
+    if (v == null || v.trim().isEmpty) return l10n.pleaseEnterPrice;
+    final n = double.tryParse(v);
+    if (n == null) return l10n.pleaseEnterValidNumber;
+    if (n < 0) return l10n.catalogPriceNotNegative;
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    // Follow the provider so the list of existing units stays current
+    final existing = context.select<ItemProvider, List<Fraction>>((p) {
+      for (final i in p.items) {
+        if (i.id == widget.item.id) return i.fractions ?? const [];
+      }
+      return widget.item.fractions ?? const [];
+    });
+
     return Dialog(
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.6,
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-        padding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 480, maxHeight: MediaQuery.of(context).size.height * 0.85),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  l10n.manageUnitsFor(widget.item.name),
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-              ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.manageUnitsFor(widget.item.name),
+                      style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 24),
-            Expanded(
+            Flexible(
               child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                 child: Form(
                   key: _formKey,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('Add New Unit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 16),
+                      if (existing.isNotEmpty) ...[
+                        AuthSectionLabel(text: l10n.existingUnits, icon: Icons.straighten_rounded),
+                        const SizedBox(height: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            children: [
+                              for (final f in existing)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          f.name,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontWeight: FontWeight.w600),
+                                        ),
+                                      ),
+                                      Text(
+                                        '×${_num.format(f.ratio)}',
+                                        style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        '${l10n.currencySymbol} ${_money.format(f.sellingPrice)}',
+                                        style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                      AuthSectionLabel(text: l10n.addUnit, icon: Icons.add_rounded),
+                      const SizedBox(height: 6),
                       Text(
                         l10n.addPrimarySellingUnitDescription,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                       ),
-                      const SizedBox(height: 16),
-
-                      CustomTextField(
+                      const SizedBox(height: 12),
+                      TextFormField(
                         controller: _nameController,
-                        labelText: l10n.unitName,
-                        hintText: 'e.g., Piece, Box, Bottle, Kilogram',
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return l10n.pleaseEnterName;
-                          }
-                          return null;
-                        },
+                        enabled: !_isSubmitting,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: authInputDecoration(
+                          context,
+                          label: l10n.unitName,
+                          icon: Icons.label_outline_rounded,
+                        ).copyWith(hintText: l10n.catalogUnitNameHint),
+                        validator: (v) => (v == null || v.trim().isEmpty) ? l10n.pleaseEnterName : null,
                       ),
-                      const SizedBox(height: 16),
-                      CustomTextField(
+                      const SizedBox(height: 12),
+                      TextFormField(
                         controller: _ratioController,
-                        labelText: l10n.ratio,
-                        hintText: 'e.g., 1 for single unit, 12 for dozen, 100 for pack of 100',
-                        keyboardType: TextInputType.number,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return l10n.pleaseEnterRatio;
-                          }
-                          if (double.tryParse(value) == null) {
-                            return l10n.pleaseEnterValidNumber;
-                          }
-                          return null;
-                        },
+                        enabled: !_isSubmitting,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [_decimal],
+                        decoration: authInputDecoration(
+                          context,
+                          label: l10n.ratio,
+                          icon: Icons.functions_rounded,
+                          helper: l10n.catalogRatioHelper,
+                        ),
+                        validator: (v) => _validRatio(v, l10n),
                       ),
-                      const SizedBox(height: 16),
-                      CustomTextField(
-                        controller: _sellingPriceController,
-                        labelText: l10n.soldPriceLabel,
-                        hintText: 'Price per unit when selling to customers (e.g., 10.50)',
-                        keyboardType: TextInputType.number,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return l10n.pleaseEnterPrice;
-                          }
-                          if (double.tryParse(value) == null) {
-                            return l10n.pleaseEnterValidNumber;
-                          }
-                          return null;
-                        },
+                      const SizedBox(height: 12),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _sellingPriceController,
+                              enabled: !_isSubmitting,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [_decimal],
+                              decoration: authInputDecoration(context, label: l10n.soldPriceLabel),
+                              validator: (v) => _validPrice(v, l10n),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _purchasePriceController,
+                              enabled: !_isSubmitting,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [_decimal],
+                              decoration: authInputDecoration(context, label: l10n.purchasePrice),
+                              validator: (v) => _validPrice(v, l10n),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      CustomTextField(
-                        controller: _purchasePriceController,
-                        labelText: l10n.purchasePrice,
-                        hintText: 'Cost per unit when buying from suppliers (e.g., 7.25)',
-                        keyboardType: TextInputType.number,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return l10n.pleaseEnterPrice;
-                          }
-                          if (double.tryParse(value) == null) {
-                            return l10n.pleaseEnterValidNumber;
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 24),
-                      CustomButton(onPressed: _addFraction, text: l10n.addUnit),
                     ],
                   ),
                 ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              child: FilledButton(
+                onPressed: _isSubmitting ? null : _addFraction,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child:
+                    _isSubmitting
+                        ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.5, color: scheme.primary),
+                        )
+                        : Text(l10n.addUnit, style: const TextStyle(fontWeight: FontWeight.w700)),
               ),
             ),
           ],

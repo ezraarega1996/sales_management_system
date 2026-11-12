@@ -58,9 +58,15 @@ class _PosScreenState extends State<PosScreen> {
   String? _categoryId;
   bool _loading = true;
 
+  /// Owners with several shops sell from one shop at a time (a basket can't mix shops).
+  /// [_shopId] is the shop the owner picked; [_effectiveShopId] is the one shown in the last build.
+  String? _shopId;
+  String? _effectiveShopId;
+
   @override
   void initState() {
     super.initState();
+    _shopId = widget.initialStock?.shopId;
     // Load after the first frame: providers notify listeners, which isn't allowed during build
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _load();
@@ -95,7 +101,9 @@ class _PosScreenState extends State<PosScreen> {
     await Future.wait([
       stockProvider.fetchAvailableItems(force: force),
       if (force || categories.categories.isEmpty) categories.fetchCategories(),
-      if (force || sales.sales.isEmpty) sales.fetchUserSales(),
+      // The sales list is shared with the Sales history and Summary screens: load the same list they
+      // do (the whole business for owners, the salesman's shop for salesmen)
+      if (force || sales.sales.isEmpty) sales.fetchSales(),
     ]);
     if (mounted) setState(() => _loading = false);
   }
@@ -133,6 +141,7 @@ class _PosScreenState extends State<PosScreen> {
         context
             .read<AvailableItemProvider>()
             .availableItems
+            .where((s) => _effectiveShopId == null || s.shopId == _effectiveShopId)
             .where((s) => _defaultUnit(s) != null && _matches(s, categoryNames))
             .where((s) => basket.remainingFor(s, _unitFor(s)!) >= 1 - 1e-9)
             .toList();
@@ -207,6 +216,22 @@ class _PosScreenState extends State<PosScreen> {
     if (quantity != null && quantity > 0 && mounted) _add(stock, unit, quantity: quantity);
   }
 
+  /// Changes the price of [unit] of [stock] for this sale, from the item list.
+  Future<void> _editPrice(AvailableItem stock, Fraction unit) async {
+    final l10n = AppLocalizations.of(context)!;
+    final basket = context.read<BasketProvider>();
+    final normal = unit.sellingPrice;
+    final price = await _askNumber(
+      context,
+      title: '${stock.item?.name ?? ''} · ${l10n.posPricePer(unit.name)}',
+      initial: basket.priceFor(stock, unit),
+      helper: l10n.posNormalPrice(_money(context, normal)),
+      quickValues: [normal],
+      quickLabel: (_) => l10n.posUseNormalPrice,
+    );
+    if (price != null && price >= 0 && mounted) await _setPriceAndOfferSync(context, basket, stock, unit, price);
+  }
+
   void _snack(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -267,10 +292,25 @@ class _PosScreenState extends State<PosScreen> {
     final stockProvider = context.watch<AvailableItemProvider>();
     final basket = context.watch<BasketProvider>();
     final auth = context.watch<AuthProvider>();
-    final stock = stockProvider.availableItems.where((s) => _defaultUnit(s) != null).toList();
+    final isManager = auth.isOwner || auth.isAdmin;
+    final allStock = stockProvider.availableItems.where((s) => _defaultUnit(s) != null).toList();
+
+    // Shops the owner can sell from, by name. A salesman only ever gets their own shop's stock.
+    final shops = <String, String>{
+      for (final s in allStock) s.shopId: s.shop?.name ?? '…',
+    };
+    final shopIds = shops.keys.toList()..sort((a, b) => shops[a]!.compareTo(shops[b]!));
+    final multiShop = isManager && shopIds.length > 1;
+    // The basket's shop wins (a basket can't mix shops), then the owner's pick, then the first shop
+    _effectiveShopId =
+        !multiShop
+            ? null
+            : basket.shopId ?? (shops.containsKey(_shopId) ? _shopId : shopIds.first);
+    final stock =
+        _effectiveShopId == null ? allStock : allStock.where((s) => s.shopId == _effectiveShopId).toList();
+
     final categoryNames = {for (final c in context.watch<CategoryProvider>().categories) c.id: c.name};
     final usedCategories = stock.map((s) => s.item?.categoryId).whereType<String>().toSet();
-    final showShopName = (auth.isOwner || auth.isAdmin) && stock.map((s) => s.shopId).toSet().length > 1;
     final filtered = stock.where((s) => _matches(s, categoryNames)).toList();
     _visibleIds = [for (final s in filtered) s.id];
     final browsing = _query.isEmpty && _categoryId == null;
@@ -282,7 +322,12 @@ class _PosScreenState extends State<PosScreen> {
     } else if (stock.isEmpty) {
       content = _EmptyState(
         icon: stockProvider.error != null ? Icons.cloud_off_rounded : Icons.inventory_2_outlined,
-        message: stockProvider.error != null ? l10n.loadFailedNoData : l10n.noItemsAssignedToYou,
+        message:
+            stockProvider.error != null
+                ? l10n.loadFailedNoData
+                : isManager
+                ? l10n.noItemsFound
+                : l10n.noItemsAssignedToYou,
         onRetry: () => _load(force: true),
       );
     } else {
@@ -322,11 +367,15 @@ class _PosScreenState extends State<PosScreen> {
                 unit: _unitFor(s)!,
                 lineQty: basket.quantityOf(s.id, _unitFor(s)!.id),
                 remaining: basket.remainingFor(s, _unitFor(s)!),
-                shopName: showShopName ? s.shop?.name : null,
+                // Rows are limited to one shop (the shop chips choose it), so no per-row shop name
+                shopName: null,
                 onUnitChanged: (f) => setState(() => _rowUnit[s.id] = f.id),
                 onAdd: () => _add(s, _unitFor(s)!),
                 onAddQuantity: () => _addWithQuantity(s, _unitFor(s)!),
                 onRemoveOne: () => _removeOne(s, _unitFor(s)!),
+                price: basket.priceFor(s, _unitFor(s)!),
+                normalPrice: basket.isPriceChanged(s, _unitFor(s)!) ? _unitFor(s)!.sellingPrice : null,
+                onEditPrice: () => _editPrice(s, _unitFor(s)!),
               ),
           ],
         ),
@@ -365,6 +414,37 @@ class _PosScreenState extends State<PosScreen> {
             ),
           ),
         ),
+        if (multiShop)
+          SizedBox(
+            height: 48,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                for (final id in shopIds)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      avatar: const Icon(Icons.storefront_outlined, size: 18),
+                      label: Text(shops[id]!),
+                      selected: _effectiveShopId == id,
+                      onSelected: (_) {
+                        if (id == _effectiveShopId) return;
+                        // Switching shops would leave a basket from another shop behind
+                        if (!basket.isEmpty) {
+                          _snack(l10n.posOtherShop);
+                          return;
+                        }
+                        setState(() {
+                          _shopId = id;
+                          _categoryId = null;
+                        });
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
         if (usedCategories.length > 1)
           SizedBox(
             height: 48,
@@ -435,6 +515,11 @@ class _StockRow extends StatelessWidget {
   final VoidCallback onRemoveOne;
   final bool highlighted;
 
+  /// Price per [unit] for this sale, and the normal price when it was changed (null otherwise).
+  final double price;
+  final double? normalPrice;
+  final VoidCallback onEditPrice;
+
   const _StockRow({
     super.key,
     required this.highlighted,
@@ -447,6 +532,9 @@ class _StockRow extends StatelessWidget {
     required this.onAdd,
     required this.onAddQuantity,
     required this.onRemoveOne,
+    required this.price,
+    required this.normalPrice,
+    required this.onEditPrice,
   });
 
   @override
@@ -508,7 +596,12 @@ class _StockRow extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(_money(context, unit.sellingPrice), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  // Tap to change the price for this sale (before or after adding it)
+                  _PriceButton(
+                    price: _money(context, price),
+                    normalPrice: normalPrice == null ? null : _money(context, normalPrice!),
+                    onTap: onEditPrice,
+                  ),
                   if (fractions.length > 1)
                     PopupMenuButton<Fraction>(
                       initialValue: unit,
@@ -650,6 +743,7 @@ Future<double?> _askNumber(
   required double initial,
   String? helper,
   List<double> quickValues = const [],
+  String Function(double value)? quickLabel,
 }) {
   final controller = TextEditingController(text: _qtyFormat.format(initial).replaceAll(',', ''))
     ..selection = TextSelection(baseOffset: 0, extentOffset: _qtyFormat.format(initial).replaceAll(',', '').length);
@@ -675,7 +769,10 @@ Future<double?> _askNumber(
                   spacing: 8,
                   children: [
                     for (final v in quickValues)
-                      ActionChip(label: Text('×${_qtyFormat.format(v)}'), onPressed: () => Navigator.pop(context, v)),
+                      ActionChip(
+                        label: Text(quickLabel?.call(v) ?? '×${_qtyFormat.format(v)}'),
+                        onPressed: () => Navigator.pop(context, v),
+                      ),
                   ],
                 ),
               ],
@@ -690,6 +787,77 @@ Future<double?> _askNumber(
           ],
         ),
   );
+}
+
+/// Sets [price] for [unit] of [stock] in this sale, then offers to update the item's other units
+/// to match, by ratio (e.g. bottle 10 → 9 suggests crate of 12: 9 × 12 = 108). Going back to the
+/// normal price offers to put the other units back to their normal prices too.
+Future<void> _setPriceAndOfferSync(
+  BuildContext context,
+  BasketProvider basket,
+  AvailableItem stock,
+  Fraction unit,
+  double price,
+) async {
+  basket.setPriceFor(stock, unit, price);
+
+  final others = (stock.item?.fractions ?? const <Fraction>[]).where((f) => f.id != unit.id && f.ratio > 0);
+  final backToNormal = (price - unit.sellingPrice).abs() < 0.005;
+  double targetFor(Fraction f) =>
+      backToNormal ? f.sellingPrice : ((price / unit.ratio * f.ratio) * 100).roundToDouble() / 100;
+  // Only offer units whose price would actually change
+  final suggestions = [
+    for (final f in others)
+      if ((targetFor(f) - basket.priceFor(stock, f)).abs() >= 0.005) (fraction: f, price: targetFor(f)),
+  ];
+  if (suggestions.isEmpty || unit.ratio <= 0 || !context.mounted) return;
+
+  final l10n = AppLocalizations.of(context)!;
+  final selected = {for (final s in suggestions) s.fraction.id};
+  final apply = await showDialog<bool>(
+    context: context,
+    builder:
+        (context) => StatefulBuilder(
+          builder:
+              (context, setState) => AlertDialog(
+                title: Text(backToNormal ? l10n.posResetOtherUnitsTitle : l10n.posSyncOtherUnitsTitle),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      backToNormal ? l10n.posResetOtherUnitsBody : l10n.posSyncOtherUnitsBody(unit.name),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    for (final s in suggestions)
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        value: selected.contains(s.fraction.id),
+                        onChanged:
+                            (on) => setState(() => on == true ? selected.add(s.fraction.id) : selected.remove(s.fraction.id)),
+                        title: Text(s.fraction.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                          '${_money(context, basket.priceFor(stock, s.fraction))}  →  ${_money(context, s.price)}',
+                        ),
+                      ),
+                  ],
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.posOnlyThisUnit)),
+                  FilledButton(
+                    onPressed: selected.isEmpty ? null : () => Navigator.pop(context, true),
+                    child: Text(l10n.posUpdateUnits),
+                  ),
+                ],
+              ),
+        ),
+  );
+  if (apply != true) return;
+  for (final s in suggestions) {
+    if (selected.contains(s.fraction.id)) basket.setPriceFor(stock, s.fraction, s.price);
+  }
 }
 
 class _BasketSheet extends StatelessWidget {
@@ -800,29 +968,47 @@ class _BasketSheet extends StatelessWidget {
                                         )
                                       else
                                         Text(line.fraction.name),
-                                      const Text('  ·  '),
-                                      InkWell(
-                                        onTap:
-                                            isOwner
-                                                ? () async {
-                                                  final price = await _askNumber(
-                                                    context,
-                                                    title: l10n.posPricePer(line.fraction.name),
-                                                    initial: line.unitPrice,
-                                                  );
-                                                  if (price != null && price >= 0) basket.setPrice(line, price);
-                                                }
-                                                : null,
-                                        child: Text(
-                                          _money(context, line.unitPrice),
-                                          style: TextStyle(
-                                            decoration: isOwner ? TextDecoration.underline : null,
-                                            decorationStyle: TextDecorationStyle.dotted,
-                                          ),
-                                        ),
+                                      const SizedBox(width: 8),
+                                      // Anyone selling can change the price (e.g. the customer bargains);
+                                      // the normal price is recorded too, so the owner sees every change
+                                      _PriceButton(
+                                        price: _money(context, line.unitPrice),
+                                        normalPrice:
+                                            line.priceOverride == null
+                                                ? null
+                                                : _money(context, line.fraction.sellingPrice),
+                                        onTap: () async {
+                                          final normal = line.fraction.sellingPrice;
+                                          final price = await _askNumber(
+                                            context,
+                                            title: l10n.posPricePer(line.fraction.name),
+                                            initial: line.unitPrice,
+                                            helper: l10n.posNormalPrice(_money(context, normal)),
+                                            quickValues: [normal],
+                                            quickLabel: (_) => l10n.posUseNormalPrice,
+                                          );
+                                          if (price != null && price >= 0 && context.mounted) {
+                                            await _setPriceAndOfferSync(
+                                              context,
+                                              basket,
+                                              line.stock,
+                                              line.fraction,
+                                              price,
+                                            );
+                                          }
+                                        },
                                       ),
                                     ],
                                   ),
+                                  if (isOwner && line.priceOverride != null && line.profit < 0)
+                                    Text(
+                                      l10n.posBelowCost,
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.error,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -889,6 +1075,53 @@ class _BasketSheet extends StatelessWidget {
               ),
             ],
           ),
+    );
+  }
+}
+
+/// The line's unit price as a tappable button. When it was changed, the normal price is shown
+/// struck through and the new price is highlighted.
+class _PriceButton extends StatelessWidget {
+  final String price;
+  final String? normalPrice;
+  final VoidCallback onTap;
+
+  const _PriceButton({required this.price, required this.normalPrice, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final changed = normalPrice != null;
+    final color = changed ? Colors.orange.shade800 : scheme.primary;
+    return Material(
+      color: color.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (changed) ...[
+                Text(
+                  normalPrice!,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                    decoration: TextDecoration.lineThrough,
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+              Text(price, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13)),
+              const SizedBox(width: 3),
+              Icon(Icons.edit_outlined, size: 13, color: color),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

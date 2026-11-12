@@ -16,8 +16,8 @@ class ShopProvider with ChangeNotifier {
 
   // Get all shops
   Future<void> getShops() async {
-    _setLoading(true);
     _clearError();
+    _setLoading(true);
 
     try {
       final response = (await Api.getCached('shops')).data;
@@ -38,8 +38,8 @@ class ShopProvider with ChangeNotifier {
 
   // Create shop
   Future<bool> createShop(String name, String address) async {
-    _setLoading(true);
     _clearError();
+    _setLoading(true);
 
     try {
       final response = await Api.post('shops', {'name': name, 'address': address});
@@ -61,10 +61,49 @@ class ShopProvider with ChangeNotifier {
     }
   }
 
+  // Update a shop's name and address
+  Future<bool> updateShop(String id, String name, String address) async {
+    _clearError();
+    _setLoading(true);
+
+    try {
+      final response = await Api.put('shops/$id', {'name': name, 'address': address});
+
+      if (response != null) {
+        final index = _shops.indexWhere((shop) => shop.id == id);
+        if (index != -1) {
+          final old = _shops[index];
+          final json = response['shop'] as Map<String, dynamic>?;
+          // The update response has no salespeople; keep the ones already loaded
+          _shops[index] = Shop(
+            id: old.id,
+            name: json?['name'] ?? name,
+            address: json?['address'] ?? address,
+            businessId: old.businessId,
+            isActive: json?['isActive'] ?? old.isActive,
+            createdAt: old.createdAt,
+            updatedAt: DateTime.now(),
+            salespeople: old.salespeople,
+          );
+        }
+        notifyListeners();
+        return true;
+      } else {
+        _setError('Failed to update shop');
+        return false;
+      }
+    } catch (e) {
+      _setError('Error updating shop: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   // Delete shop
   Future<bool> deleteShop(String id) async {
-    _setLoading(true);
     _clearError();
+    _setLoading(true);
 
     try {
       final response = await Api.delete('shops/$id');
@@ -87,8 +126,8 @@ class ShopProvider with ChangeNotifier {
 
   // Get available salespeople
   Future<void> getAvailableSalespeople() async {
-    _setLoading(true);
     _clearError();
+    _setLoading(true);
 
     try {
       final response = await Api.get('shops/available-salespeople');
@@ -109,16 +148,15 @@ class ShopProvider with ChangeNotifier {
 
   // Assign salesperson to shop
   Future<bool> assignSalespersonToShop(String shopId, String salespersonId) async {
-    _setLoading(true);
     _clearError();
+    _setLoading(true);
 
     try {
       final response = await Api.post('shops/$shopId/assign-salesperson', {'salespersonId': salespersonId});
 
       if (response != null) {
-        // Refresh shops to get updated data
-        await getShops();
-        await getAvailableSalespeople();
+        // Refresh shops and the unassigned list together to get updated data
+        await Future.wait([getShops(), getAvailableSalespeople()]);
         return true;
       } else {
         _setError('Failed to assign salesperson');
@@ -134,16 +172,15 @@ class ShopProvider with ChangeNotifier {
 
   // Remove salesperson from shop
   Future<bool> removeSalespersonFromShop(String shopId, String salespersonId) async {
-    _setLoading(true);
     _clearError();
+    _setLoading(true);
 
     try {
       final response = await Api.post('shops/$shopId/remove-salesperson', {'salespersonId': salespersonId});
 
       if (response != null) {
-        // Refresh shops to get updated data
-        await getShops();
-        await getAvailableSalespeople();
+        // Refresh shops and the unassigned list together to get updated data
+        await Future.wait([getShops(), getAvailableSalespeople()]);
         return true;
       } else {
         _setError('Failed to remove salesperson');
@@ -167,7 +204,17 @@ class ShopProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Silent: every caller notifies right after via _setLoading
   void _clearError() {
+    _error = null;
+  }
+
+  /// Forgets everything loaded for the signed-in user (called on logout), so the next person
+  /// using this phone never sees it.
+  void reset() {
+    _shops = [];
+    _availableSalespeople = [];
+    _isLoading = false;
     _error = null;
     notifyListeners();
   }

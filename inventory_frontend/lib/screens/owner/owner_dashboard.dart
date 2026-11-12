@@ -15,6 +15,8 @@ import 'package:inventory_frontend/screens/available_items_screen.dart';
 import 'package:inventory_frontend/screens/owner/shops_screen.dart';
 import 'package:inventory_frontend/screens/dashboard_view.dart';
 import 'package:inventory_frontend/screens/summary_screen.dart';
+import 'package:inventory_frontend/screens/salesman/pos_screen.dart';
+import 'package:inventory_frontend/widgets/app_drawer.dart';
 import 'package:inventory_frontend/widgets/language_selector.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
@@ -69,6 +71,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     setState(() {
       _selectedIndex = index;
     });
+    // Back on the dashboard after selling or buying elsewhere: refresh the numbers
+    if (index == 0) _loadDashboardData();
   }
 
   Future<void> _logout() async {
@@ -87,34 +91,38 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       case 1:
         return const SalesScreen();
       case 2:
-        return const ItemsScreen();
+        return const ItemsScreen(showAppBar: false);
       case 3:
-        return const CategoriesScreen();
+        return const CategoriesScreen(showAppBar: false);
       case 4:
-        return const UsersScreen();
+        return const UsersScreen(showAppBar: false);
       case 5:
         return const SubscriptionScreen();
       case 6:
-        return const BoughtsScreen();
+        return const BoughtsScreen(showAppBar: false);
       case 7:
         return const AvailableItemsScreen();
       case 8:
-        return const ShopsScreen();
+        return const ShopsScreen(showAppBar: false);
       case 9:
         return const SummaryScreen();
+      case 10:
+        // Owners sell too; the dashboard provides the app bar
+        return const PosScreen(showAppBar: false);
       default:
         return _buildDashboard();
     }
   }
 
   Widget _buildDashboard() {
-    // Indexes match _getScreen(): 1 = sales, 7 = available items, 8 = shops
+    // Indexes match _getScreen(): 1 = sales, 7 = available items, 8 = shops, 10 = sell
     return DashboardView(
       isLoading: _isLoading,
       onRefresh: _loadDashboardData,
       onViewSales: () => _onItemTapped(1),
       onViewStock: () => _onItemTapped(7),
       onViewShops: () => _onItemTapped(8),
+      onSell: () => _onItemTapped(10),
     );
   }
 
@@ -148,140 +156,45 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
 
   Widget _buildDrawer() {
     final l10n = AppLocalizations.of(context)!;
-    return Drawer(
-      child: ListView(
-        // No top padding so the header fills the status bar area, but keep the last items
-        // (Logout) above the phone's navigation bar so they can be tapped
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 8),
-        children: [
-          DrawerHeader(
-            decoration: BoxDecoration(color: Colors.blue),
-            child: Text(l10n.menu, style: TextStyle(color: Colors.white, fontSize: 24)),
-          ),
-          ListTile(
-            leading: Icon(Icons.dashboard),
-            title: Text(l10n.dashboard),
-            selected: _selectedIndex == 0,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 0;
-              });
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.summarize),
-            title: Text(l10n.summary),
-            selected: _selectedIndex == 9,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 9;
-              });
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.shop),
-            title: Text(l10n.shops),
-            selected: _selectedIndex == 8,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 8;
-              });
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.people),
-            title: Text(l10n.salesPerson),
-            selected: _selectedIndex == 4,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 4;
-              });
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.category),
-            title: Text(l10n.categories),
-            selected: _selectedIndex == 3,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 3;
-              });
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.inventory),
-            title: Text(l10n.items),
-            selected: _selectedIndex == 2,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 2;
-              });
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.shopping_basket),
-            title: Text(l10n.storedItems),
-            selected: _selectedIndex == 6,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 6;
-              });
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.inventory_2),
-            title: Text(l10n.availableItems),
-            selected: _selectedIndex == 7,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 7;
-              });
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.shopping_cart),
-            title: Text(l10n.sales),
-            selected: _selectedIndex == 1,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 1;
-              });
-              Navigator.pop(context);
-            },
-          ),
-
-          ListTile(
-            leading: Icon(Icons.card_membership),
-            title: Text(l10n.subscription),
-            selected: _selectedIndex == 5,
-            onTap: () {
-              setState(() {
-                _selectedIndex = 5;
-              });
-              Navigator.pop(context);
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.lock, color: Colors.blue),
-            title: const Text('Change Password'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChangePasswordScreen()));
-            },
-          ),
-          const Divider(),
-          ListTile(leading: const Icon(Icons.logout, color: Colors.red), title: Text(l10n.logout), onTap: _logout),
-        ],
-      ),
+    // Indexes match _getScreen()
+    return AppDrawer(
+      selectedIndex: _selectedIndex,
+      onSelect: _onItemTapped,
+      onLogout: _logout,
+      onChangePassword:
+          () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChangePasswordScreen())),
+      sections: [
+        AppDrawerSection(
+          items: [
+            AppDrawerItem(icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: l10n.dashboard, index: 0),
+            AppDrawerItem(icon: Icons.summarize_outlined, selectedIcon: Icons.summarize, label: l10n.summary, index: 9),
+          ],
+        ),
+        AppDrawerSection(
+          title: l10n.drawerSectionSales,
+          items: [
+            AppDrawerItem(icon: Icons.point_of_sale_outlined, selectedIcon: Icons.point_of_sale, label: l10n.sellItem, index: 10),
+            AppDrawerItem(icon: Icons.receipt_long_outlined, selectedIcon: Icons.receipt_long, label: l10n.sales, index: 1),
+          ],
+        ),
+        AppDrawerSection(
+          title: l10n.drawerSectionInventory,
+          items: [
+            AppDrawerItem(icon: Icons.inventory_2_outlined, selectedIcon: Icons.inventory_2, label: l10n.availableItems, index: 7),
+            AppDrawerItem(icon: Icons.local_shipping_outlined, selectedIcon: Icons.local_shipping, label: l10n.storedItems, index: 6),
+            AppDrawerItem(icon: Icons.sell_outlined, selectedIcon: Icons.sell, label: l10n.items, index: 2),
+            AppDrawerItem(icon: Icons.category_outlined, selectedIcon: Icons.category, label: l10n.categories, index: 3),
+          ],
+        ),
+        AppDrawerSection(
+          title: l10n.drawerSectionBusiness,
+          items: [
+            AppDrawerItem(icon: Icons.storefront_outlined, selectedIcon: Icons.storefront, label: l10n.shops, index: 8),
+            AppDrawerItem(icon: Icons.people_outline, selectedIcon: Icons.people, label: l10n.salesPerson, index: 4),
+            AppDrawerItem(icon: Icons.workspace_premium_outlined, selectedIcon: Icons.workspace_premium, label: l10n.subscription, index: 5),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -22,6 +22,13 @@ class SoldItem {
   final String? receiptId;
   final double? profit;
 
+  /// What the line would have cost at the normal (catalogue) price. Differs from [soldPrice]
+  /// when the price was changed at the counter.
+  final double? expectedAmount;
+
+  /// True when the seller charged a different price than the catalogue price.
+  bool get priceChanged => expectedAmount != null && (soldPrice - expectedAmount!).abs() >= 0.01;
+
   SoldItem({
     required this.id,
     required this.itemId,
@@ -39,6 +46,7 @@ class SoldItem {
     this.availableItemId,
     this.receiptId,
     this.profit,
+    this.expectedAmount,
   });
 
   factory SoldItem.fromJson(Map<String, dynamic> json) {
@@ -67,6 +75,7 @@ class SoldItem {
       availableItemId: json['availableItemId'],
       receiptId: json['receiptId'],
       profit: (json['profit'] as num?)?.toDouble(),
+      expectedAmount: double.tryParse('${json['expectedAmount'] ?? ''}'),
     );
   }
 
@@ -94,6 +103,7 @@ class SoldItem {
       'available_items_count': available_items_count,
       'availableItemId': availableItemId,
       'profit': profit,
+      'expectedAmount': expectedAmount,
     };
   }
 

@@ -68,6 +68,7 @@ class Api {
     } on OfflineException {
       final cached = await LocalCache.read(endpoint);
       if (cached == null) rethrow;
+      ConnectionStatus.instance.noteSavedData(cached.savedAt);
       return CachedResponse(cached.data, fromCache: true, savedAt: cached.savedAt);
     }
   }

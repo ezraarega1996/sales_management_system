@@ -8,3 +8,13 @@ services:
     startCommand: "npm start"
     autoDeploy: true
     rootDir: .
+    envVars:
+      # Production mode: the database is never rewritten on start (only missing tables/columns added),
+      # and the server refuses to start without a real JWT_SECRET.
+      - key: NODE_ENV
+        value: production
+      # Set these in the Render dashboard (sync: false keeps them out of this file)
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false

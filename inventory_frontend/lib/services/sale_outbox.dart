@@ -138,6 +138,10 @@ class SaleOutbox extends ChangeNotifier {
   List<PendingSale> _items = [];
   String? _userId;
   bool _syncing = false;
+
+  /// The sale being sent right now, and a future that completes when that send is over.
+  String? _sendingId;
+  Completer<void>? _sendDone;
   Timer? _timer;
 
   Stream<SyncedSale> get synced => _synced.stream;
@@ -198,6 +202,14 @@ class SaleOutbox extends ChangeNotifier {
   /// Whether [clientId] is still waiting on the phone (not yet confirmed by the server).
   bool isPending(String clientId) => _items.any((s) => s.clientId == clientId && !s.isFailed);
 
+  /// If [clientId] is being sent right now, waits until that attempt is over (sent or failed), so
+  /// an undo can then tell whether the sale reached the server. Returns at once otherwise.
+  Future<void> waitWhileSending(String clientId) async {
+    while (_sendingId == clientId && _sendDone != null) {
+      await _sendDone!.future;
+    }
+  }
+
   /// Sends waiting sales oldest-first. Stops at the first network problem (to retry later).
   /// Returns how many sales the server accepted.
   Future<int> sync() async {
@@ -207,6 +219,10 @@ class SaleOutbox extends ChangeNotifier {
     var sent = 0;
     try {
       for (final sale in pending) {
+        // Undone/discarded while earlier sales were being sent: don't send it
+        if (!_items.any((s) => s.clientId == sale.clientId)) continue;
+        _sendingId = sale.clientId;
+        _sendDone = Completer<void>();
         try {
           final response = await _sender(sale.endpoint, sale.payload);
           _items.removeWhere((s) => s.clientId == sale.clientId);
@@ -222,6 +238,10 @@ class SaleOutbox extends ChangeNotifier {
           notifyListeners();
         } catch (_) {
           break; // offline / timeout / unexpected: keep it and retry later
+        } finally {
+          _sendingId = null;
+          _sendDone?.complete();
+          _sendDone = null;
         }
       }
     } finally {

@@ -26,7 +26,7 @@ class DashboardView extends StatelessWidget {
   /// Owner only.
   final VoidCallback? onViewShops;
 
-  /// Salesman only: shows a prominent "Sell item" button in the header.
+  /// Shows a prominent "Sell item" button in the header (owners and salesmen both sell).
   final VoidCallback? onSell;
 
   const DashboardView({

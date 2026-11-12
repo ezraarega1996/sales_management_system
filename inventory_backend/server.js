@@ -16,6 +16,11 @@ import shopRoutes from "./routes/shopRoutes.js"
 import { connectWithRetry } from "./models/database.js"
 
 if (!process.env.JWT_SECRET) {
+  // The default is public (it's in the repo), so anyone could forge logins with it: never in production
+  if (process.env.NODE_ENV === "production") {
+    console.error("❌ JWT_SECRET is not set. Set it in the server's environment and restart.")
+    process.exit(1)
+  }
   process.env.JWT_SECRET = "your-super-secret-jwt-key-change-this-in-production"
   console.warn("⚠️  JWT_SECRET not set, using an insecure development default")
 }

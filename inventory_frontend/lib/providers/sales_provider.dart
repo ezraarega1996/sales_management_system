@@ -26,7 +26,16 @@ class SalesProvider with ChangeNotifier {
   double? _todaySales;
   List<SalesData> _todaySalesData = [];
 
-  List<SoldItem> get sales => [..._sales];
+  /// Read-only view, rebuilt only after a change (every change goes through notifyListeners).
+  /// Screens can also use its identity to tell whether the sales changed since their last build.
+  List<SoldItem> get sales => _salesView ??= List.unmodifiable(_sales);
+  List<SoldItem>? _salesView;
+
+  @override
+  void notifyListeners() {
+    _salesView = null;
+    super.notifyListeners();
+  }
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isShowingSavedData => _fromCache;
@@ -130,6 +139,9 @@ class SalesProvider with ChangeNotifier {
   /// Cancels a just-made sale. If it is still on the phone it is simply dropped; otherwise the
   /// server puts the stock back (salesmen: own sales, within 10 minutes). Throws on failure.
   Future<void> undoSale(PendingSale sale) async {
+    // If it is being sent right now, wait for that to finish: otherwise dropping the phone's copy
+    // wouldn't stop the upload, and the sale would be recorded anyway
+    await _outbox.waitWhileSending(sale.clientId);
     if (_outbox.isPending(sale.clientId)) {
       await _outbox.discard(sale.clientId);
       return;
@@ -177,5 +189,20 @@ class SalesProvider with ChangeNotifier {
     _outbox.removeListener(notifyListeners);
     _syncedSub.cancel();
     super.dispose();
+  }
+
+  /// Forgets everything loaded for the signed-in user (called on logout), so the next person
+  /// using this phone never sees it.
+  void reset() {
+    _sales = [];
+    _isLoading = false;
+    _error = null;
+    _fromCache = false;
+    _dashboardStats = null;
+    _totalSales = null;
+    _totalItemsSold = null;
+    _todaySales = null;
+    _todaySalesData = [];
+    notifyListeners();
   }
 }

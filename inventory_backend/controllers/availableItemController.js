@@ -1,4 +1,4 @@
-import { AvailableItem, Item, SoldItem, Fraction, User, ItemBought, Shop, sequelize } from "../models/index.js"
+import { AvailableItem, Item, SoldItem, Fraction, User, ItemBought, Shop, StockLot, sequelize } from "../models/index.js"
 import { Op } from "sequelize"
 
 const FRACTION_ATTRS = ["id", "name", "ratio", "sellingPrice", "purchasePrice", "isUnit", "itemId"]
@@ -29,7 +29,37 @@ export const getAllAvailableItems = async (req, res) => {
       order: [[sequelize.literal('LOWER("item"."name")'), "ASC"]],
     })
 
-    res.json(availableItems)
+    // Owners also get the cost of the stock on hand, per base unit (salesmen don't see costs):
+    //   unitCost     what the next unit sold will cost (oldest lot with stock, FIFO; used for profit)
+    //   avgUnitCost  weighted average cost of all units still in stock
+    //   stockValue   what the units still in stock cost in total
+    if (req.user.role === "salesman") return res.json(availableItems)
+    const lots = await StockLot.findAll({
+      where: { businessId: req.user.businessId, remainingUnits: { [Op.gt]: 0 }, ...(where.shopId ? { shopId: where.shopId } : {}) },
+      attributes: ["shopId", "itemId", "unitCost", "remainingUnits", "receivedAt"],
+      order: [["receivedAt", "ASC"], ["id", "ASC"]],
+    })
+    const costs = new Map()
+    for (const lot of lots) {
+      const key = `${lot.shopId}:${lot.itemId}`
+      const units = parseFloat(lot.remainingUnits)
+      const unitCost = parseFloat(lot.unitCost)
+      const c = costs.get(key) ?? { next: unitCost, units: 0, value: 0 }
+      c.units += units
+      c.value += units * unitCost
+      costs.set(key, c)
+    }
+    res.json(
+      availableItems.map((a) => {
+        const c = costs.get(`${a.shopId}:${a.itemId}`)
+        return {
+          ...a.toJSON(),
+          unitCost: c?.next ?? null,
+          avgUnitCost: c && c.units > 0 ? c.value / c.units : null,
+          stockValue: c ? Math.round(c.value * 100) / 100 : null,
+        }
+      }),
+    )
   } catch (error) {
     console.error("Error fetching available items:", error.message)
     res.status(500).json({ message: "Error fetching available items", error: error.message })

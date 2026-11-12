@@ -1,4 +1,4 @@
-import { User, Business } from "../models/index.js"
+import { User, Business, Shop } from "../models/index.js"
 import { checkSubscriptionLimits } from "../config/subscriptionPlans.js"
 import { Op } from "sequelize"
 
@@ -61,6 +61,14 @@ export const createUser = async (req, res) => {
     if (req.user.role !== "admin" && req.user.role !== "owner") {
       return res.status(403).json({ message: "Not authorized to create users" })
     }
+    // Owners add salesmen to their own business; only a platform admin may create owners or admins
+    const newRole = role || "salesman"
+    if (!["salesman", "owner", "admin"].includes(newRole)) {
+      return res.status(400).json({ message: "Invalid role" })
+    }
+    if (req.user.role !== "admin" && newRole !== "salesman") {
+      return res.status(403).json({ message: "Owners can only add salesmen" })
+    }
 
     // If not admin, check subscription limits for user count
     if (req.user.role !== "admin") {
@@ -97,6 +105,11 @@ export const createUser = async (req, res) => {
     // Set businessId based on who is creating the user
     const businessId = req.user.role === "admin" ? req.body.businessId : req.user.businessId
 
+    // A shop given for the new user must belong to the same business
+    if (shopId && !(await Shop.findOne({ where: { id: shopId, businessId } }))) {
+      return res.status(400).json({ message: "Shop not found in this business" })
+    }
+
     // Create user
     const user = await User.create({
       name,
@@ -104,7 +117,7 @@ export const createUser = async (req, res) => {
       location,
       username,
       password,
-      role: role || "salesman",
+      role: newRole,
       businessId,
       shopId,
     })
@@ -141,6 +154,16 @@ export const updateUser = async (req, res) => {
       req.user.id !== user.id
     ) {
       return res.status(403).json({ message: "Not authorized to update this user" })
+    }
+
+    // Editing your own account: only contact details. A new password goes through
+    // change-password (which asks for the current one), and the shop is the owner's decision.
+    const managesUser = req.user.role === "admin" || (req.user.role === "owner" && req.user.id !== user.id)
+    if (!managesUser && (password || shopId !== undefined)) {
+      return res.status(403).json({ message: "Use Change Password to change your password; only the owner can change your shop" })
+    }
+    if (shopId && !(await Shop.findOne({ where: { id: shopId, businessId: user.businessId } }))) {
+      return res.status(400).json({ message: "Shop not found in this business" })
     }
 
     // Update user

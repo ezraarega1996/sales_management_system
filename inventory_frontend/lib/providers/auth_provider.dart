@@ -112,6 +112,9 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  /// Called on logout to clear what other providers loaded for this user (set up in main.dart).
+  VoidCallback? onLoggedOut;
+
   /// Unsynced sales are kept on the phone (per user) and sent after the same user logs in again.
   Future<void> logout() async {
     await Storage.clearSession();
@@ -120,6 +123,7 @@ class AuthProvider with ChangeNotifier {
     LocalCache.setUser(null);
     _user = null;
     _isAuthenticated = false;
+    onLoggedOut?.call();
     notifyListeners();
   }
 }

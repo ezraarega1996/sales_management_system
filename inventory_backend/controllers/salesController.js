@@ -1,5 +1,14 @@
 import { SoldItem, Item, User, Fraction, AvailableItem, Shop, sequelize } from "../models/index.js"
 import { Op } from "sequelize"
+import {
+  lockStock,
+  consumeFifo,
+  saveAllocations,
+  returnSalesToStock,
+  allocatedCost,
+  num,
+  round2,
+} from "../services/stockLedger.js"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -13,7 +22,7 @@ const saleIncludes = () => [
 export const getAllSales = async (req, res) => {
   try {
     const sales = await SoldItem.findAll({
-      where: { businessId: req.user.businessId },
+      where: salesScope(req),
       include: saleIncludes(),
       order: [["soldTime", "DESC"]],
     })
@@ -27,7 +36,7 @@ export const getAllSales = async (req, res) => {
 export const getSaleById = async (req, res) => {
   try {
     const sale = await SoldItem.findOne({
-      where: { id: req.params.id, businessId: req.user.businessId },
+      where: { id: req.params.id, ...salesScope(req) },
       include: saleIncludes(),
     })
     if (!sale) {
@@ -44,14 +53,22 @@ export const getSaleById = async (req, res) => {
  * sales queued while offline) and a sale with that id already exists, the existing sale is returned
  * and stock is not decremented again.
  */
+/** What [quantity] of [fraction] costs at the catalogue (normal) selling price. */
+const catalogueAmount = (fraction, quantity) => round2(parseFloat(fraction.sellingPrice || 0) * quantity)
+
+/** Profit = the price actually charged minus what the sold units cost (FIFO, see stockLedger). */
+const saleProfit = (amount, cost) => round2(num(amount) - cost)
+
 export const createSale = async (req, res) => {
-  const { itemId, fractionId, quantity, amount, shopId, profit, clientId, soldTime } = req.body
-  const selectedShopId = shopId || req.user.shopId
+  const { itemId, fractionId, quantity, amount, shopId, clientId, soldTime } = req.body
+  // Salesmen always sell from their own shop; owners choose the shop
+  const selectedShopId = req.user.role === "salesman" ? req.user.shopId : shopId || req.user.shopId
 
   if (!selectedShopId) {
     return res.status(400).json({ message: "shopId is required to create a sale" })
   }
-  if (!itemId || !fractionId || !quantity || !amount) {
+  // amount may be 0 (given away), but not missing or negative
+  if (!itemId || !fractionId || !(quantity > 0) || !(amount >= 0)) {
     return res.status(400).json({ message: "All fields are required" })
   }
 
@@ -61,7 +78,11 @@ export const createSale = async (req, res) => {
       if (existing) return res.status(200).json(existing)
     }
 
-    const fraction = await Fraction.findOne({ where: { id: fractionId, itemId } })
+    // The unit must belong to this item and to this business
+    const fraction = await Fraction.findOne({
+      where: { id: fractionId, itemId },
+      include: [{ model: Item, attributes: ["id"], where: { businessId: req.user.businessId } }],
+    })
     if (!fraction) {
       return res.status(404).json({ message: "Fraction not found" })
     }
@@ -73,11 +94,8 @@ export const createSale = async (req, res) => {
 
     const sale = await sequelize.transaction(async (transaction) => {
       // Lock the stock row so two concurrent sales can't both pass the quantity check
-      const availableItem = await AvailableItem.findOne({
-        where: { itemId, shopId: selectedShopId, businessId: req.user.businessId },
-        lock: transaction.LOCK.UPDATE,
-        transaction,
-      })
+      const stockKey = { businessId: req.user.businessId, shopId: selectedShopId, itemId }
+      const availableItem = await lockStock(stockKey, transaction)
       if (!availableItem) {
         throw Object.assign(new Error("No available items found for this item"), { status: 400 })
       }
@@ -87,26 +105,32 @@ export const createSale = async (req, res) => {
 
       availableItem.quantity = parseFloat(availableItem.quantity) - quantityInUnits
       await availableItem.save({ transaction })
+      // Cost of the units sold, oldest purchases first
+      const { cost, parts } = await consumeFifo({ ...stockKey, units: quantityInUnits }, transaction)
 
-      return SoldItem.create(
+      const created = await SoldItem.create(
         {
           itemId,
           fractionId,
           quantity,
           amount,
-          expectedAmount: amount,
+          // The catalogue price, so a price changed at the counter is visible to the owner
+          expectedAmount: catalogueAmount(fraction, quantity),
           salesmanId: req.user.id,
           businessId: req.user.businessId,
           available_items_count: availableItem.quantity / fraction.ratio,
           availableItemId: availableItem.id,
           shopId: selectedShopId,
-          profit: typeof profit === "number" ? profit : 0,
+          // Worked out here from the price actually charged and the FIFO cost, not trusted from the phone
+          profit: saleProfit(amount, cost),
           clientId: clientId || null,
           soldTime: saleTime,
           createdTime: saleTime,
         },
         { transaction },
       )
+      await saveAllocations(created.id, parts, transaction)
+      return created
     })
 
     res.status(201).json(sale)
@@ -116,13 +140,19 @@ export const createSale = async (req, res) => {
     }
     // A retry raced with the original request: the unique clientId already exists
     if (error.name === "SequelizeUniqueConstraintError" && clientId) {
-      const existing = await SoldItem.findOne({ where: { clientId } })
+      const existing = await SoldItem.findOne({ where: { clientId, businessId: req.user.businessId } })
       if (existing) return res.status(200).json(existing)
     }
     console.error("Error creating sale:", error.message)
     res.status(500).json({ message: "Error creating sale", error: error.message })
   }
 }
+
+/** Salesmen only see their own shop's sales (for the shop summary); owners see the business. */
+const salesScope = (req) =>
+  req.user.role === "salesman"
+    ? { businessId: req.user.businessId, shopId: req.user.shopId ?? null }
+    : { businessId: req.user.businessId }
 
 const UNDO_WINDOW_MS = 10 * 60 * 1000
 
@@ -135,7 +165,8 @@ const UNDO_WINDOW_MS = 10 * 60 * 1000
 export const createBatchSale = async (req, res) => {
   const { clientId, soldTime, shopId, lines } = req.body
   const businessId = req.user.businessId
-  const selectedShopId = shopId || req.user.shopId
+  // Salesmen always sell from their own shop; owners choose the shop
+  const selectedShopId = req.user.role === "salesman" ? req.user.shopId : shopId || req.user.shopId
 
   if (!clientId) return res.status(400).json({ message: "clientId is required" })
   if (!selectedShopId) return res.status(400).json({ message: "shopId is required to create a sale" })
@@ -163,22 +194,27 @@ export const createBatchSale = async (req, res) => {
       })
       const fractionById = new Map(fractions.map((f) => [f.id, f]))
 
-      // Lock each stock row once, even if several lines sell the same item in different units
-      const stockByItem = new Map()
       for (const line of lines) {
         const fraction = fractionById.get(line.fractionId)
         if (!fraction || fraction.itemId !== line.itemId || fraction.Item?.businessId !== businessId) {
           throw Object.assign(new Error("Item or unit not found"), { status: 404 })
         }
-        if (!stockByItem.has(line.itemId)) {
-          const stock = await AvailableItem.findOne({
-            where: { itemId: line.itemId, shopId: selectedShopId, businessId },
-            lock: transaction.LOCK.UPDATE,
-            transaction,
-          })
-          if (!stock) throw Object.assign(new Error(`${fraction.Item.name} is not stocked in this shop`), { status: 400 })
-          stockByItem.set(line.itemId, stock)
+      }
+
+      // Lock each stock row once (even if several lines sell the same item in different units), in a
+      // fixed order so two baskets with the same items can't deadlock each other
+      const stockByItem = new Map()
+      for (const itemId of [...new Set(lines.map((l) => l.itemId))].sort()) {
+        const stock = await lockStock({ businessId, shopId: selectedShopId, itemId }, transaction)
+        if (!stock) {
+          const name = fractionById.get(lines.find((l) => l.itemId === itemId).fractionId).Item.name
+          throw Object.assign(new Error(`${name} is not stocked in this shop`), { status: 400 })
         }
+        stockByItem.set(itemId, stock)
+      }
+
+      for (const line of lines) {
+        const fraction = fractionById.get(line.fractionId)
         const stock = stockByItem.get(line.itemId)
         const units = line.quantity * fraction.ratio
         if (parseFloat(stock.quantity) < units - 1e-9) {
@@ -187,19 +223,24 @@ export const createBatchSale = async (req, res) => {
         stock.quantity = parseFloat(stock.quantity) - units
         line._stock = stock
         line._ratio = fraction.ratio
+        line._fraction = fraction
+        // Lines of the same item take from the lots in turn, oldest purchases first
+        line._cost = await consumeFifo({ businessId, shopId: selectedShopId, itemId: line.itemId, units }, transaction)
       }
 
       for (const stock of stockByItem.values()) await stock.save({ transaction })
 
       for (const line of lines) {
-        await SoldItem.create(
+        const created = await SoldItem.create(
           {
             itemId: line.itemId,
             fractionId: line.fractionId,
             quantity: line.quantity,
             amount: line.amount,
-            expectedAmount: line.amount,
-            profit: typeof line.profit === "number" ? line.profit : 0,
+            // The catalogue price, so a price changed at the counter is visible to the owner
+            expectedAmount: catalogueAmount(line._fraction, line.quantity),
+            // Worked out here from the price actually charged and the FIFO cost, not trusted from the phone
+            profit: saleProfit(line.amount, line._cost.cost),
             salesmanId: req.user.id,
             businessId,
             shopId: selectedShopId,
@@ -211,6 +252,7 @@ export const createBatchSale = async (req, res) => {
           },
           { transaction },
         )
+        await saveAllocations(created.id, line._cost.parts, transaction)
       }
       return { created: true, sales: await findReceipt(transaction) }
     })
@@ -242,15 +284,8 @@ export const undoReceipt = async (req, res) => {
         }
       }
 
-      const fractions = await Fraction.findAll({ where: { id: sales.map((s) => s.fractionId) }, transaction })
-      const ratioById = new Map(fractions.map((f) => [f.id, f.ratio]))
-      for (const sale of sales) {
-        if (!sale.availableItemId) continue
-        const stock = await AvailableItem.findByPk(sale.availableItemId, { lock: transaction.LOCK.UPDATE, transaction })
-        if (!stock) continue
-        stock.quantity = parseFloat(stock.quantity) + sale.quantity * (ratioById.get(sale.fractionId) ?? 1)
-        await stock.save({ transaction })
-      }
+      // Units go back into stock and into the exact purchase lots they came from
+      await returnSalesToStock(sales, transaction)
       await SoldItem.destroy({ where: { receiptId, businessId: req.user.businessId }, transaction })
       return sales.length
     })
@@ -265,6 +300,12 @@ export const undoReceipt = async (req, res) => {
 export const updateSale = async (req, res) => {
   try {
     const { quantity, amount, expectedAmount, status, existing } = req.body
+    if (quantity !== undefined) {
+      return res.status(400).json({ message: "The quantity of a sale can't be changed. Delete the sale and sell again." })
+    }
+    if (amount !== undefined && !(parseFloat(amount) >= 0)) {
+      return res.status(400).json({ message: "Amount must be 0 or more" })
+    }
 
     const sale = await SoldItem.findOne({
       where: { id: req.params.id, businessId: req.user.businessId },
@@ -276,8 +317,13 @@ export const updateSale = async (req, res) => {
       return res.status(403).json({ message: "Not authorized to update this sale" })
     }
 
-    if (quantity !== undefined) sale.quantity = quantity
-    if (amount !== undefined) sale.amount = amount
+    if (amount !== undefined) {
+      // Keep profit consistent with the new price: price minus the recorded cost of the units
+      const cost = await allocatedCost(sale.id)
+      if (cost != null) sale.profit = saleProfit(amount, cost)
+      else if (sale.profit != null) sale.profit = round2(num(sale.profit) + num(amount) - num(sale.amount))
+      sale.amount = amount
+    }
     if (expectedAmount !== undefined) sale.expectedAmount = expectedAmount
     if (status !== undefined) sale.status = status
     if (existing !== undefined) sale.existing = existing
@@ -300,7 +346,11 @@ export const deleteSale = async (req, res) => {
     if (req.user.role !== "owner" && req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized to delete sales" })
     }
-    await sale.destroy()
+    await sequelize.transaction(async (transaction) => {
+      // Deleting a sale cancels it: its units go back into stock and into their purchase lots
+      await returnSalesToStock([sale], transaction)
+      await sale.destroy({ transaction })
+    })
     res.json({ message: "Sale deleted successfully" })
   } catch (error) {
     res.status(500).json({ message: "Error deleting sale", error: error.message })

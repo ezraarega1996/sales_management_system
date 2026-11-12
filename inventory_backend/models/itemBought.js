@@ -64,8 +64,18 @@ const ItemBought = sequelize.define("ItemBought", {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
   },
+  // Id the phone gives a purchase, so a save repeated after a timeout isn't recorded twice
+  clientId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 }, {
-  indexes: [{ fields: ["businessId", "createdTime"] }, { fields: ["shopId"] }, { fields: ["availableItemId"] }],
+  indexes: [
+    { fields: ["businessId", "createdTime"] },
+    { fields: ["shopId"] },
+    { fields: ["availableItemId"] },
+    { fields: ["businessId", "clientId"] },
+  ],
 })
 
 ItemBought.belongsTo(Item, { foreignKey: "itemId" })

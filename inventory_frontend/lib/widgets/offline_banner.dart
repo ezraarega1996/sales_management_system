@@ -9,6 +9,14 @@ import 'package:inventory_frontend/utils/connection_status.dart';
 class OfflineBanner extends StatelessWidget {
   const OfflineBanner({super.key});
 
+  static String _age(DateTime from, AppLocalizations l10n) {
+    final age = DateTime.now().difference(from);
+    if (age.inMinutes < 1) return l10n.ageJustNow;
+    if (age.inHours < 1) return l10n.ageMinutes(age.inMinutes);
+    if (age.inDays < 1) return l10n.ageHours(age.inHours);
+    return l10n.ageDays(age.inDays);
+  }
+
   @override
   Widget build(BuildContext context) {
     final connection = ConnectionStatus.instance;
@@ -36,8 +44,10 @@ class OfflineBanner extends StatelessWidget {
           background = Colors.orange.shade100;
           foreground = Colors.orange.shade900;
           icon = Icons.cloud_off_rounded;
-          message =
-              pending > 0 ? '${l10n.offlineSavedData} · ${l10n.salesWaitingToSync(pending)}' : l10n.offlineSavedData;
+          // Say how old the saved data is: stock shown offline can be out of date
+          final from = connection.savedDataFrom;
+          final saved = from == null ? l10n.offlineSavedData : l10n.offlineSavedDataFrom(_age(from, l10n));
+          message = pending > 0 ? '$saved · ${l10n.salesWaitingToSync(pending)}' : saved;
         } else {
           background = scheme.secondaryContainer;
           foreground = scheme.onSecondaryContainer;

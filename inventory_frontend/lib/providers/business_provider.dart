@@ -45,4 +45,13 @@ class BusinessProvider with ChangeNotifier {
       return null;
     }
   }
+
+  /// Forgets everything loaded for the signed-in user (called on logout), so the next person
+  /// using this phone never sees it.
+  void reset() {
+    _currentBusiness = null;
+    _subscriptionPlans = {};
+    _error = null;
+    notifyListeners();
+  }
 }

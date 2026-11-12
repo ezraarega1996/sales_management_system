@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -181,5 +182,63 @@ void main() {
     expect(outbox.pending, isEmpty);
     await outbox.switchUser('user-1');
     expect(outbox.pending, hasLength(1));
+  });
+
+  test('a sale discarded while an earlier one is being sent is not sent', () async {
+    final first = await enqueue();
+    final second = await enqueue();
+    final gate = Completer<void>();
+    final slow = SaleOutbox(
+      sender: (endpoint, payload) async {
+        if (payload['clientId'] == first.clientId) await gate.future;
+        return server.send(endpoint, payload);
+      },
+      store: store,
+      retryInterval: null,
+    );
+    await slow.switchUser('user-1');
+
+    final syncing = slow.sync();
+    await Future<void>.delayed(Duration.zero);
+    await slow.discard(second.clientId); // undone while the first one is on its way
+    gate.complete();
+    await syncing;
+
+    expect(server.seenClientIds, {first.clientId});
+  });
+
+  test('waitWhileSending waits for an in-flight send, so undo sees whether it reached the server', () async {
+    final sale = await enqueue();
+    final gate = Completer<void>();
+    final slow = SaleOutbox(
+      sender: (endpoint, payload) async {
+        await gate.future;
+        return server.send(endpoint, payload);
+      },
+      store: store,
+      retryInterval: null,
+    );
+    await slow.switchUser('user-1');
+
+    final syncing = slow.sync();
+    await Future<void>.delayed(Duration.zero);
+    var waited = false;
+    final waiting = slow.waitWhileSending(sale.clientId).then((_) => waited = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(waited, isFalse, reason: 'still being sent');
+
+    gate.complete();
+    await waiting;
+    await syncing;
+    expect(waited, isTrue);
+    // It reached the server, so an undo must go to the server rather than just drop the local copy
+    expect(slow.isPending(sale.clientId), isFalse);
+    expect(server.seenClientIds, {sale.clientId});
+  });
+
+  test('waitWhileSending returns at once when nothing is being sent', () async {
+    final sale = await enqueue();
+    await outbox.waitWhileSending(sale.clientId);
+    expect(outbox.isPending(sale.clientId), isTrue);
   });
 }

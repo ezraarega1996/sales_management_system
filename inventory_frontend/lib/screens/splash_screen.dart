@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:inventory_frontend/providers/auth_provider.dart';
-import 'package:inventory_frontend/screens/auth/login_screen.dart';
 import 'package:inventory_frontend/screens/admin/admin_dashboard.dart';
 import 'package:inventory_frontend/screens/owner/owner_dashboard.dart';
 import 'package:inventory_frontend/screens/salesman/salesman_dashboard.dart';
+import 'package:inventory_frontend/screens/welcome_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -39,7 +39,7 @@ class _SplashScreenState extends State<SplashScreen> {
         Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const SalesmanDashboard()));
       }
     } else {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const WelcomeScreen()));
     }
   }
 

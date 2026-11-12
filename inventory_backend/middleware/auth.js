@@ -1,6 +1,39 @@
 import jwt from "jsonwebtoken"
 import { User, Business } from "../models/index.js"
 
+/** Fields that reveal what the business pays for goods or earns on them: owner-only. */
+const COST_FIELDS = new Set([
+  "purchasePrice",
+  "fractionPurchasePrice",
+  "profit",
+  "totalProfit",
+  "todayProfit",
+  "unitCost",
+  "avgUnitCost",
+  "stockValue",
+])
+
+/** Deep copy of [value] without cost fields (handles Sequelize instances via toJSON). */
+const withoutCosts = (value) => {
+  if (Array.isArray(value)) return value.map(withoutCosts)
+  if (value && typeof value === "object") {
+    // Dates (and other values with their own JSON form) stay as they are; a Date's toJSON gives a
+    // string, which must not be walked like an object
+    if (value instanceof Date) return value
+    if (typeof value.toJSON === "function") {
+      value = value.toJSON()
+      if (!value || typeof value !== "object") return value
+      if (Array.isArray(value)) return value.map(withoutCosts)
+    }
+    const out = {}
+    for (const [key, v] of Object.entries(value)) {
+      if (!COST_FIELDS.has(key)) out[key] = withoutCosts(v)
+    }
+    return out
+  }
+  return value
+}
+
 export const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization
@@ -40,6 +73,11 @@ export const authenticate = async (req, res, next) => {
     }
 
     req.user = user
+    // Salesmen must not see purchase prices or profit: strip them from every response
+    if (user.role === "salesman") {
+      const json = res.json.bind(res)
+      res.json = (body) => json(withoutCosts(body))
+    }
     next()
   } catch (error) {
     return res.status(401).json({ message: "Invalid token" })

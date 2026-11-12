@@ -35,32 +35,49 @@ class Bought {
   });
   
   factory Bought.fromJson(Map<String, dynamic> json) {
+    final fractionId = json['fractionId']?.toString() ?? '';
     return Bought(
-      id: json['id'] ?? '',
-      fractionId: json['fractionId'] ?? '',
-      fractionPurchasePrice: (json['fractionPurchasePrice'] is num)
-          ? (json['fractionPurchasePrice'] as num).toDouble()
-          : double.tryParse(json['fractionPurchasePrice']?.toString() ?? '') ?? 0.0,
-      fractionSoldPrice: (json['fractionSoldPrice'] is num)
-          ? (json['fractionSoldPrice'] as num).toDouble()
-          : double.tryParse(json['fractionSoldPrice']?.toString() ?? '') ?? 0.0,
-      quantity: double.tryParse(json['quantity'].toString()) ?? 0.0,
-      expiryDate: json['expiryDate'] != null ? DateTime.parse(json['expiryDate']) : null,
-      createdTime: DateTime.parse(json['createdTime'] ?? DateTime.now().toIso8601String()),
-      itemId: json['itemId'] ?? '',
-      item: json['Item'] != null ? Item.fromJson(json['Item']) : null,
-      fraction: json['Item']?['fractions'] != null && json['Item']?['fractions'].isNotEmpty 
-          ? Fraction.fromJson(json['Item']['fractions'].firstWhere(
-              (f) => f['id'] == json['fractionId'],
-              orElse: () => null,
-            ))
-          : null,
-      shopId: json['shopId'],
-      shop: json['Shop'] != null ? Shop.fromJson(json['Shop']) : null,
-      available_items_count: json['available_items_count'] != null ? double.tryParse(json['available_items_count'].toString()) : null,
+      id: json['id']?.toString() ?? '',
+      fractionId: fractionId,
+      fractionPurchasePrice: _toDouble(json['fractionPurchasePrice']) ?? 0.0,
+      fractionSoldPrice: _toDouble(json['fractionSoldPrice']) ?? 0.0,
+      quantity: _toDouble(json['quantity']) ?? 0.0,
+      expiryDate: _toDate(json['expiryDate']),
+      createdTime: _toDate(json['createdTime'] ?? json['createdAt']) ?? DateTime.now(),
+      itemId: json['itemId']?.toString() ?? '',
+      item: json['Item'] is Map<String, dynamic> ? Item.fromJson(json['Item']) : null,
+      fraction: _findFraction(json['Item'], fractionId),
+      shopId: json['shopId']?.toString(),
+      shop: json['Shop'] is Map<String, dynamic> ? Shop.fromJson(json['Shop']) : null,
+      available_items_count: _toDouble(json['available_items_count']),
     );
   }
-  
+
+  static double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
+  static DateTime? _toDate(dynamic value) => value == null ? null : DateTime.tryParse(value.toString());
+
+  /// The purchased unit, looked up in the item's fractions; null when it isn't there or can't be read.
+  static Fraction? _findFraction(dynamic itemJson, String fractionId) {
+    if (itemJson is! Map || fractionId.isEmpty) return null;
+    final fractions = itemJson['fractions'];
+    if (fractions is! List) return null;
+    for (final f in fractions) {
+      if (f is Map<String, dynamic> && f['id']?.toString() == fractionId) {
+        try {
+          return Fraction.fromJson(f);
+        } catch (_) {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

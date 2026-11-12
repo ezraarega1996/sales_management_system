@@ -75,6 +75,19 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // On logout, forget everything the previous user loaded (sales, stock, prices, basket...), so the
+    // next person signing in on this phone starts clean and never sees another user's data
+    context.read<AuthProvider>().onLoggedOut = () {
+      context.read<SalesProvider>().reset();
+      context.read<AvailableItemProvider>().reset();
+      context.read<BoughtProvider>().reset();
+      context.read<BusinessProvider>().reset();
+      context.read<CategoryProvider>().reset();
+      context.read<ItemProvider>().reset();
+      context.read<ShopProvider>().reset();
+      context.read<UserProvider>().reset();
+      context.read<BasketProvider>().clear();
+    };
   }
 
   @override

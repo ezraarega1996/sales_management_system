@@ -1,465 +1,693 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+
+import 'package:inventory_frontend/models/fraction.dart';
 import 'package:inventory_frontend/models/item.dart';
+import 'package:inventory_frontend/providers/auth_provider.dart';
 import 'package:inventory_frontend/providers/category_provider.dart';
 import 'package:inventory_frontend/providers/item_provider.dart';
-import 'package:inventory_frontend/screens/owner/item_detail_screen.dart';
 import 'package:inventory_frontend/screens/owner/categories_screen.dart';
-import 'package:inventory_frontend/widgets/custom_text_field.dart';
+import 'package:inventory_frontend/screens/owner/item_detail_screen.dart';
+import 'package:inventory_frontend/widgets/auth_layout.dart';
+import 'package:inventory_frontend/widgets/fraction_management_dialog.dart';
+import 'package:inventory_frontend/widgets/offline_banner.dart';
 
+enum _ItemAction { edit, units, delete }
+
+/// The item catalog: search, filter by category, add/edit/delete items and their units.
+///
+/// Shown inside the owner dashboard (which provides the app bar, [showAppBar] false) and pushed
+/// as its own page, e.g. from the bought items form with [autoOpenAdd], where it pops with the
+/// new item's id once the item is saved.
 class ItemsScreen extends StatefulWidget {
   final String? initialCategoryId;
   final bool autoOpenAdd;
-  const ItemsScreen({super.key, this.initialCategoryId, this.autoOpenAdd = false});
+  final bool showAppBar;
+  const ItemsScreen({super.key, this.initialCategoryId, this.autoOpenAdd = false, this.showAppBar = true});
 
   @override
   State<ItemsScreen> createState() => _ItemsScreenState();
 }
 
 class _ItemsScreenState extends State<ItemsScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _fractionNameController = TextEditingController();
-  final _ratioController = TextEditingController();
-  final _sellingPriceController = TextEditingController();
-  final _purchasePriceController = TextEditingController();
-  String? _selectedCategoryId;
-  String? _editingItemId;
+  static final _money = NumberFormat('#,##0.00');
+
   bool _isLoading = true;
-  bool _isSubmitting = false;
+  String _query = '';
+  String? _categoryFilter; // null = all categories
 
   @override
   void initState() {
     super.initState();
+    _categoryFilter = widget.initialCategoryId;
     // Load after the first frame: providers notify listeners, which isn't allowed during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAll();
-      if (widget.autoOpenAdd && mounted) _showAddEditDialog();
+      if (widget.autoOpenAdd && mounted) _openItemForm();
     });
+  }
+
+  Future<void> _loadAll() async {
+    if (!mounted) return;
+    final itemProvider = context.read<ItemProvider>();
+    final categoryProvider = context.read<CategoryProvider>();
+    // Keep showing the current list while refreshing; only show a spinner when there is nothing yet
+    setState(() => _isLoading = itemProvider.items.isEmpty);
+    await Future.wait([itemProvider.fetchItems(), categoryProvider.fetchCategories()]);
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  /// Add (no [item]) or edit an item. A new item opens its detail page, or, when this page was
+  /// opened to add an item ([ItemsScreen.autoOpenAdd]), returns its id to the caller.
+  Future<void> _openItemForm([Item? item]) async {
+    final l10n = AppLocalizations.of(context)!;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final saved = await showDialog<Item>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ItemFormDialog(item: item, initialCategoryId: item == null ? _categoryFilter : null),
+    );
+    if (saved == null || !mounted) return;
+    messenger.showSnackBar(SnackBar(content: Text(item == null ? l10n.itemAdded : l10n.itemUpdated)));
+    if (item != null) return;
+    if (widget.autoOpenAdd) {
+      navigator.pop(saved.id);
+      return;
+    }
+    navigator.push(MaterialPageRoute(builder: (_) => ItemDetailScreen(item: saved)));
+  }
+
+  Future<void> _deleteItem(Item item) async {
+    final l10n = AppLocalizations.of(context)!;
+    final provider = context.read<ItemProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(l10n.deleteItem),
+            content: Text(l10n.catalogDeleteItemConfirm(item.name)),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text(l10n.cancel)),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text(l10n.delete),
+              ),
+            ],
+          ),
+    );
+    if (confirm != true) return;
+    // The provider removes the item itself, so there is no need to reload everything
+    final ok = await provider.deleteItem(item.id);
+    messenger.showSnackBar(SnackBar(content: Text(ok ? l10n.itemDeleted : (provider.error ?? l10n.error))));
+  }
+
+  void _manageUnits(Item item) {
+    showDialog(context: context, builder: (_) => FractionManagementDialog(item: item));
+  }
+
+  void _openDetails(Item item) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ItemDetailScreen(item: item)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final itemProvider = context.watch<ItemProvider>();
+    final categories = context.watch<CategoryProvider>().categories;
+    final isOwner = context.select<AuthProvider, bool>((a) => a.isOwner);
+
+    final categoryNames = {for (final c in categories) c.id: c.name};
+    final title =
+        widget.initialCategoryId != null ? (categoryNames[widget.initialCategoryId] ?? l10n.items) : l10n.items;
+
+    return Scaffold(
+      appBar:
+          widget.showAppBar
+              ? AppBar(title: Text(title), actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAll)])
+              : null,
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _buildList(l10n, itemProvider, categories.map((c) => MapEntry(c.id, c.name)), categoryNames, isOwner),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _isLoading ? null : () => _openItemForm(),
+        tooltip: l10n.addItem,
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildList(
+    AppLocalizations l10n,
+    ItemProvider provider,
+    Iterable<MapEntry<String, String>> categoryChips,
+    Map<String, String> categoryNames,
+    bool isOwner,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final all = provider.items;
+    // A filter for a category that no longer exists shows everything
+    final filter =
+        _categoryFilter != null && (categoryNames.containsKey(_categoryFilter) || _categoryFilter == widget.initialCategoryId)
+            ? _categoryFilter
+            : null;
+    final q = _query.trim().toLowerCase();
+    final visible =
+        all.where((item) {
+            if (filter != null && item.categoryId != filter) return false;
+            return q.isEmpty || item.name.toLowerCase().contains(q);
+          }).toList()
+          ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    return RefreshIndicator(
+      onRefresh: _loadAll,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            sliver: SliverList.list(
+              children: [
+                TextField(
+                  onChanged: (v) => setState(() => _query = v),
+                  decoration: InputDecoration(
+                    hintText: l10n.searchItems,
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    isDense: true,
+                    filled: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                  ),
+                ),
+                if (categoryChips.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(l10n.posAll),
+                            selected: filter == null,
+                            onSelected: (_) => setState(() => _categoryFilter = null),
+                          ),
+                        ),
+                        for (final entry in categoryChips)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              avatar: const Icon(Icons.folder_outlined, size: 16),
+                              label: Text(entry.value),
+                              selected: filter == entry.key,
+                              onSelected: (_) => setState(() => _categoryFilter = entry.key),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (all.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    l10n.summaryItemsTitle(visible.length),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+              ],
+            ),
+          ),
+          if (visible.isEmpty)
+            SliverToBoxAdapter(
+              child: _buildEmpty(l10n, failed: provider.error != null && all.isEmpty, filtered: q.isNotEmpty || filter != null),
+            )
+          else
+            SliverPadding(
+              // Bottom padding keeps the last card clear of the FAB
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
+              sliver: SliverList.separated(
+                itemCount: visible.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder:
+                    (context, i) =>
+                        _buildCard(visible[i], l10n, categoryNames[visible[i].categoryId] ?? visible[i].category?.name, isOwner),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmpty(AppLocalizations l10n, {required bool failed, required bool filtered}) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.only(top: 80, left: 32, right: 32),
+      child: Column(
+        children: [
+          Icon(failed ? Icons.cloud_off_rounded : Icons.inventory_2_outlined, size: 44, color: color),
+          const SizedBox(height: 12),
+          Text(
+            failed
+                ? l10n.loadFailedNoData
+                : filtered
+                ? l10n.summaryNoItemsMatch
+                : l10n.noItemsFound,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: color),
+          ),
+          if (failed) TextButton.icon(onPressed: _loadAll, icon: const Icon(Icons.refresh), label: Text(l10n.retry)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCard(Item item, AppLocalizations l10n, String? categoryName, bool isOwner) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final fractions = item.fractions ?? const <Fraction>[];
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: scheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openDetails(item),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
+                    child: Icon(Icons.inventory_2_outlined, size: 20, color: scheme.onPrimaryContainer),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(Icons.folder_outlined, size: 13, color: scheme.onSurfaceVariant),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                '${categoryName ?? l10n.noCategory} · ${l10n.catalogUnitsCount(fractions.length)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<_ItemAction>(
+                    icon: const Icon(Icons.more_vert_rounded),
+                    onSelected: (action) {
+                      switch (action) {
+                        case _ItemAction.edit:
+                          _openItemForm(item);
+                        case _ItemAction.units:
+                          _manageUnits(item);
+                        case _ItemAction.delete:
+                          _deleteItem(item);
+                      }
+                    },
+                    itemBuilder:
+                        (_) => [
+                          PopupMenuItem(
+                            value: _ItemAction.edit,
+                            child: ListTile(
+                              leading: const Icon(Icons.edit_outlined),
+                              title: Text(l10n.editItem),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: _ItemAction.units,
+                            child: ListTile(
+                              leading: const Icon(Icons.straighten_rounded),
+                              title: Text(l10n.manageUnits),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: _ItemAction.delete,
+                            child: ListTile(
+                              leading: Icon(Icons.delete_outline_rounded, color: scheme.error),
+                              title: Text(l10n.deleteItem, style: TextStyle(color: scheme.error)),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ],
+                  ),
+                ],
+              ),
+              if (fractions.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [for (final f in fractions) _UnitPill(fraction: f, showCost: isOwner, money: _money)],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One unit of an item with its selling price (and cost for owners).
+class _UnitPill extends StatelessWidget {
+  final Fraction fraction;
+  final bool showCost;
+  final NumberFormat money;
+
+  const _UnitPill({required this.fraction, required this.showCost, required this.money});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final symbol = l10n.currencySymbol;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: scheme.surfaceContainerHigh, borderRadius: BorderRadius.circular(10)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: fraction.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                TextSpan(
+                  text: '  $symbol ${money.format(fraction.sellingPrice)}',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary),
+                ),
+              ],
+            ),
+            style: theme.textTheme.labelMedium,
+          ),
+          if (showCost)
+            Text(
+              '${l10n.catalogCost} $symbol ${money.format(fraction.purchasePrice)}',
+              style: theme.textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Add or edit an item. A new item also gets its first (base) unit. Pops with the saved item.
+class _ItemFormDialog extends StatefulWidget {
+  final Item? item;
+  final String? initialCategoryId;
+
+  const _ItemFormDialog({this.item, this.initialCategoryId});
+
+  @override
+  State<_ItemFormDialog> createState() => _ItemFormDialogState();
+}
+
+class _ItemFormDialogState extends State<_ItemFormDialog> {
+  static final _decimal = FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'));
+
+  final _formKey = GlobalKey<FormState>();
+  late final _nameController = TextEditingController(text: widget.item?.name ?? '');
+  final _unitNameController = TextEditingController();
+  final _ratioController = TextEditingController(text: '1');
+  final _sellingPriceController = TextEditingController();
+  final _purchasePriceController = TextEditingController();
+  String? _categoryId;
+  bool _isSubmitting = false;
+
+  bool get _isNew => widget.item == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _categoryId = widget.item?.categoryId ?? widget.initialCategoryId;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _fractionNameController.dispose();
+    _unitNameController.dispose();
     _ratioController.dispose();
     _sellingPriceController.dispose();
     _purchasePriceController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadAll() async {
-    if (!mounted) return;
-    setState(() { _isLoading = true; });
-    final itemProvider = context.read<ItemProvider>();
-    final categoryProvider = context.read<CategoryProvider>();
-
-    await Future.wait([
-      itemProvider.fetchItems(),
-      categoryProvider.fetchCategories(),
-    ]);
-    if (mounted) {
-      setState(() { _isLoading = false; });
-    }
-  }
-
-  Future<void> _navigateAndAddCategory(StateSetter setDialogState) async {
-    final result = await Navigator.of(context).push<String?>(
-      MaterialPageRoute(
-        builder: (_) => const CategoriesScreen(),
-        settings: const RouteSettings(arguments: true),
-      ),
-    );
-    if (result != null && mounted) {
-      await context.read<CategoryProvider>().fetchCategories();
-      setDialogState(() { _selectedCategoryId = result; });
-    }
-  }
-
-  void _showAddEditDialog({String? id, String? name, String? categoryId}) {
-    final l10n = AppLocalizations.of(context)!;
-    _editingItemId = id;
-    _nameController.text = name ?? '';
-    _fractionNameController.clear();
-    _ratioController.clear();
-    _sellingPriceController.clear();
-    _purchasePriceController.clear();
-    _selectedCategoryId = categoryId ?? (id == null ? widget.initialCategoryId : null);
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(_editingItemId == null ? l10n.addNew : l10n.edit),
-          content: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CustomTextField(
-                  controller: _nameController,
-                  labelText: l10n.name,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return l10n.required;
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Consumer<CategoryProvider>(
-                        builder: (context, categoryProvider, child) {
-                          return DropdownButtonFormField<String>(
-                            value: _selectedCategoryId,
-                            decoration: InputDecoration(
-                              labelText: l10n.select,
-                              border: const OutlineInputBorder(),
-                            ),
-                            items: categoryProvider.categories.map((category) {
-                              return DropdownMenuItem<String>(
-                                value: category.id,
-                                child: Text(category.name),
-                              );
-                            }).toList(),
-                            onChanged: _isSubmitting ? null : (value) {
-                              setDialogState(() { _selectedCategoryId = value; });
-                            },
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return l10n.required;
-                              }
-                              return null;
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: _isSubmitting ? null : () => _navigateAndAddCategory(setDialogState),
-                      icon: const Icon(Icons.add),
-                      tooltip: 'Add new category',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (_editingItemId == null) ...[
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Unit Information',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Add the primary selling unit for this item. eg. Piece, Box, Bottle, Kilogram, litre, etc.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  CustomTextField(
-                    controller: _fractionNameController,
-                    labelText: 'Unit Name',
-                    hintText: 'e.g., Piece, Box, Bottle, Kilogram',
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Unit name is required';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  CustomTextField(
-                    controller: _ratioController,
-                    labelText: 'Ratio',
-                    hintText: 'e.g., 1 for single unit, 12 for dozen, 100 for pack of 100',
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Ratio is required';
-                      }
-                      if (double.tryParse(value) == null) {
-                        return 'Please enter a valid number';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  CustomTextField(
-                    controller: _sellingPriceController,
-                    labelText: 'Selling Price',
-                    hintText: 'Price per unit when selling to customers (e.g., 10.50)',
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Selling price is required';
-                      }
-                      if (double.tryParse(value) == null) {
-                        return 'Please enter a valid number';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  CustomTextField(
-                    controller: _purchasePriceController,
-                    labelText: 'Purchase Price',
-                    hintText: 'Cost per unit when buying from suppliers (e.g., 7.25)',
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Purchase price is required';
-                      }
-                      if (double.tryParse(value) == null) {
-                        return 'Please enter a valid number';
-                      }
-                      return null;
-                    },
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: _isSubmitting ? null : () {
-                setState(() { _isSubmitting = false; });
-                Navigator.of(context).pop();
-              },
-              child: Text(l10n.cancel),
-            ),
-            TextButton(
-              onPressed: _isSubmitting ? null : () async {
-                if (!_formKey.currentState!.validate()) return;
-                
-                setState(() { _isSubmitting = true; });
-                setDialogState(() {});
-                
-                try {
-                  final itemProvider = context.read<ItemProvider>();
-                  bool success;
-                  
-                  if (_editingItemId == null) {
-                    // Create item first
-                    success = await itemProvider.createItem(
-                      _nameController.text.trim(),
-                      _selectedCategoryId!,
-                      [],
-                    );
-                    
-                    if (success) {
-                      // Find the newly created item
-                      final newItem = itemProvider.items
-                          .where((i) => i.name.trim() == _nameController.text.trim())
-                          .firstOrNull;
-                      
-                      if (newItem != null) {
-                        // Create the fraction for the new item
-                        final fractionSuccess = await itemProvider.createFraction(
-                          newItem.id,
-                          _fractionNameController.text.trim(),
-                          double.parse(_ratioController.text),
-                          double.parse(_sellingPriceController.text),
-                          double.parse(_purchasePriceController.text),
-                          isUnit: true,
-                        );
-                        
-                        if (!fractionSuccess) {
-                          throw Exception(itemProvider.error ?? 'Failed to create unit');
-                        }
-                      }
-                    }
-                  } else {
-                    success = await itemProvider.updateItem(
-                      _editingItemId!,
-                      _nameController.text.trim(),
-                      _selectedCategoryId!,
-                    );
-                  }
-                  
-                  if (!mounted) return;
-                  
-                  if (success) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(l10n.success))
-                    );
-                    await _loadAll();
-                    // If we were opened from BoughtsScreen (autoOpenAdd), return the new item ID and close
-                    if (widget.autoOpenAdd && mounted) {
-                      final newItemId = itemProvider.items
-                          .where((i) => i.name.trim() == _nameController.text.trim())
-                          .firstOrNull
-                          ?.id;
-                      if (newItemId != null) {
-                        Navigator.of(context).pop(newItemId);
-                        return;
-                      }
-                    }
-                    // Navigate to item details after successful creation
-                    if (_editingItemId == null && mounted) {
-                      final newItem = itemProvider.items
-                          .where((i) => i.name.trim() == _nameController.text.trim())
-                          .firstOrNull;
-                      if (newItem != null) {
-                        Navigator.of(context).pop(); // Close dialog first
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => ItemDetailScreen(item: newItem),
-                          ),
-                        );
-                        return;
-                      }
-                    }
-                    if (mounted) Navigator.of(context).pop();
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(itemProvider.error ?? l10n.error))
-                    );
-                    if (mounted) Navigator.of(context).pop();
-                  }
-                } finally {
-                  if (mounted) {
-                    setState(() { _isSubmitting = false; });
-                  }
-                }
-              },
-              child: _isSubmitting 
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(l10n.save),
-            ),
-          ],
-        ),
-      ),
-    ).then((_) {
-      // Reset state when dialog is closed
-      if (mounted) {
-        setState(() { _isSubmitting = false; });
-      }
-    });
-  }
-
-  Future<void> _deleteItem(String id) async {
-    final l10n = AppLocalizations.of(context)!;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.delete),
-        content: Text(l10n.confirmDelete),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(l10n.delete),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      final itemProvider = context.read<ItemProvider>();
-      final success = await itemProvider.deleteItem(id);
-
-      if (!mounted) return;
-
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.success))
-        );
-        await _loadAll();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(itemProvider.error ?? l10n.error))
-        );
-      }
-    }
-  }
-
-  void _viewItemDetails(Item item) {
-    Navigator.of(
+  Future<void> _addCategory() async {
+    // The categories page opens its add form and pops with the new category's id
+    final id = await Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (_) => ItemDetailScreen(item: item)));
+    ).push<String?>(MaterialPageRoute(builder: (_) => const CategoriesScreen(), settings: const RouteSettings(arguments: true)));
+    if (id != null && mounted) setState(() => _categoryId = id);
+  }
+
+  static Item? _findById(List<Item> items, String id) {
+    for (final i in items) {
+      if (i.id == id) return i;
+    }
+    return null;
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    final l10n = AppLocalizations.of(context)!;
+    final provider = context.read<ItemProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final name = _nameController.text.trim();
+
+    setState(() => _isSubmitting = true);
+    Item? saved;
+    if (_isNew) {
+      if (await provider.createItem(name, _categoryId!, [])) {
+        // The provider appends the created item; take the newest one with this name
+        final created = provider.items.lastWhere((i) => i.name.trim() == name, orElse: () => provider.items.last);
+        final unitOk = await provider.createFraction(
+          created.id,
+          _unitNameController.text.trim(),
+          double.parse(_ratioController.text),
+          double.parse(_sellingPriceController.text),
+          double.parse(_purchasePriceController.text),
+          isUnit: true,
+        );
+        // The item exists even if its unit failed; units can still be added from its page
+        if (!unitOk) messenger.showSnackBar(SnackBar(content: Text(provider.error ?? l10n.error)));
+        saved = _findById(provider.items, created.id) ?? created;
+      }
+    } else {
+      if (await provider.updateItem(widget.item!.id, name, _categoryId!)) {
+        saved = _findById(provider.items, widget.item!.id) ?? widget.item;
+      }
+    }
+
+    if (saved != null) {
+      navigator.pop(saved);
+      return;
+    }
+    messenger.showSnackBar(SnackBar(content: Text(provider.error ?? l10n.error)));
+    if (mounted) setState(() => _isSubmitting = false);
+  }
+
+  String? _required(String? v, AppLocalizations l10n) => (v == null || v.trim().isEmpty) ? l10n.required : null;
+
+  String? _validRatio(String? v, AppLocalizations l10n) {
+    if (v == null || v.trim().isEmpty) return l10n.pleaseEnterRatio;
+    final n = double.tryParse(v);
+    if (n == null) return l10n.pleaseEnterValidNumber;
+    if (n <= 0) return l10n.catalogRatioMustBePositive;
+    return null;
+  }
+
+  String? _validPrice(String? v, AppLocalizations l10n) {
+    if (v == null || v.trim().isEmpty) return l10n.pleaseEnterPrice;
+    final n = double.tryParse(v);
+    if (n == null) return l10n.pleaseEnterValidNumber;
+    if (n < 0) return l10n.catalogPriceNotNegative;
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final items = context.watch<ItemProvider>().items;
-    final filteredItems = widget.initialCategoryId != null
-        ? items.where((item) => item.categoryId == widget.initialCategoryId).toList()
-        : items;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.initialCategoryId != null
-            ? l10n.items
-            : l10n.items),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadAll,
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Consumer<ItemProvider>(
-              builder: (context, itemProvider, child) {
-                if (filteredItems.isEmpty) {
-                  return Center(child: Text(l10n.noData));
-                }
-                return RefreshIndicator(
-                  onRefresh: _loadAll,
-                  child: ListView.builder(
-                    itemCount: filteredItems.length,
-                    itemBuilder: (context, index) {
-                      final item = filteredItems[index];
-                      return ListTile(
-                        title: Text(item.name),
-                        subtitle: Text(item.category?.name ?? ''),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit),
-                              onPressed: () => _showAddEditDialog(
-                                id: item.id,
-                                name: item.name,
-                                categoryId: item.categoryId,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete),
-                              onPressed: () => _deleteItem(item.id),
-                            ),
-                          ],
-                        ),
-                        onTap: () => _viewItemDetails(item),
-                      );
-                    },
+    final scheme = Theme.of(context).colorScheme;
+    final categories = context.watch<CategoryProvider>().categories;
+    // The dropdown asserts its value is one of the items
+    final selected = categories.any((c) => c.id == _categoryId) ? _categoryId : null;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Text(_isNew ? l10n.addItem : l10n.editItem),
+      content: SizedBox(
+        width: 420,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  enabled: !_isSubmitting,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: authInputDecoration(context, label: l10n.name, icon: Icons.inventory_2_outlined),
+                  validator: (v) => _required(v, l10n),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: selected,
+                        isExpanded: true,
+                        decoration: authInputDecoration(context, label: l10n.category, icon: Icons.folder_outlined),
+                        items: [
+                          for (final c in categories)
+                            DropdownMenuItem(value: c.id, child: Text(c.name, overflow: TextOverflow.ellipsis)),
+                        ],
+                        onChanged: _isSubmitting ? null : (v) => setState(() => _categoryId = v),
+                        validator: (v) => (v == null || v.isEmpty) ? l10n.required : null,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: IconButton.filledTonal(
+                        onPressed: _isSubmitting ? null : _addCategory,
+                        icon: const Icon(Icons.create_new_folder_outlined),
+                        tooltip: l10n.catalogAddCategory,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_isNew) ...[
+                  const SizedBox(height: 20),
+                  AuthSectionLabel(text: l10n.catalogFirstUnitTitle, icon: Icons.straighten_rounded),
+                  const SizedBox(height: 6),
+                  Text(
+                    l10n.addPrimarySellingUnitDescription,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                   ),
-                );
-              },
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextFormField(
+                          controller: _unitNameController,
+                          enabled: !_isSubmitting,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: authInputDecoration(
+                            context,
+                            label: l10n.unitName,
+                          ).copyWith(hintText: l10n.catalogUnitNameHint),
+                          validator: (v) => (v == null || v.trim().isEmpty) ? l10n.pleaseEnterName : null,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: _ratioController,
+                          enabled: !_isSubmitting,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [_decimal],
+                          decoration: authInputDecoration(context, label: l10n.ratio),
+                          validator: (v) => _validRatio(v, l10n),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _sellingPriceController,
+                          enabled: !_isSubmitting,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [_decimal],
+                          decoration: authInputDecoration(context, label: l10n.soldPriceLabel),
+                          validator: (v) => _validPrice(v, l10n),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _purchasePriceController,
+                          enabled: !_isSubmitting,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          inputFormatters: [_decimal],
+                          decoration: authInputDecoration(context, label: l10n.purchasePrice),
+                          validator: (v) => _validPrice(v, l10n),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _isLoading ? null : () => _showAddEditDialog(),
-        child: const Icon(Icons.add),
+          ),
+        ),
       ),
+      actions: [
+        TextButton(onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(), child: Text(l10n.cancel)),
+        FilledButton(
+          onPressed: _isSubmitting ? null : _submit,
+          child:
+              _isSubmitting
+                  ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: scheme.primary))
+                  : Text(l10n.save),
+        ),
+      ],
     );
   }
 }

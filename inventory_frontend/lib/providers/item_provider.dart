@@ -206,4 +206,13 @@ class ItemProvider with ChangeNotifier {
       return false;
     }
   }
+
+  /// Forgets everything loaded for the signed-in user (called on logout), so the next person
+  /// using this phone never sees it.
+  void reset() {
+    _items = [];
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
+  }
 }

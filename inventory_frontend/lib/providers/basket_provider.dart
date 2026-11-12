@@ -18,7 +18,12 @@ class BasketLine {
   String get itemName => stock.item?.name ?? '';
   double get unitPrice => priceOverride ?? fraction.sellingPrice;
   double get amount => unitPrice * quantity;
-  double get profit => (unitPrice - fraction.purchasePrice) * quantity;
+  /// What one [fraction] of this item costs: the FIFO cost of the next units in stock when the
+  /// server sent it (owners), else the catalogue purchase price.
+  double get unitCost => stock.unitCost != null ? stock.unitCost! * fraction.ratio : fraction.purchasePrice;
+
+  /// Estimated profit, for the below-cost warning. The server works out the real profit.
+  double get profit => (unitPrice - unitCost) * quantity;
 
   /// Base units this line takes from stock.
   double get units => quantity * fraction.ratio;
@@ -40,6 +45,37 @@ class BasketProvider with ChangeNotifier {
   static const _epsilon = 1e-9;
 
   final Map<String, BasketLine> _lines = {};
+
+  /// Prices set on an item row before it was added (key: stockId:fractionId). Used when the item
+  /// is added, and cleared with the basket so the next customer starts at normal prices.
+  final Map<String, double> _pendingPrices = {};
+
+  /// The price per unit that will be charged for [fraction] of [stock] in this sale.
+  double priceFor(AvailableItem stock, Fraction fraction) =>
+      _lines['${stock.id}:${fraction.id}']?.unitPrice ??
+      _pendingPrices['${stock.id}:${fraction.id}'] ??
+      fraction.sellingPrice;
+
+  /// Whether this sale uses a different price than the catalogue for [fraction] of [stock].
+  bool isPriceChanged(AvailableItem stock, Fraction fraction) =>
+      (priceFor(stock, fraction) - fraction.sellingPrice).abs() >= 0.005;
+
+  /// Sets the price for [fraction] of [stock] from the item list: changes the basket line if it is
+  /// already there, otherwise remembers it for when the item is added.
+  void setPriceFor(AvailableItem stock, Fraction fraction, double price) {
+    final key = '${stock.id}:${fraction.id}';
+    final line = _lines[key];
+    if (line != null) {
+      setPrice(line, price);
+      return;
+    }
+    if ((price - fraction.sellingPrice).abs() < 0.005) {
+      _pendingPrices.remove(key);
+    } else {
+      _pendingPrices[key] = price;
+    }
+    notifyListeners();
+  }
 
   List<BasketLine> get lines => _lines.values.toList();
   bool get isEmpty => _lines.isEmpty;
@@ -70,7 +106,8 @@ class BasketProvider with ChangeNotifier {
     final existing = _lines[key];
     _lines[key] =
         existing == null
-            ? BasketLine(stock: stock, fraction: fraction, quantity: quantity)
+            // A price set on the item row before adding carries over to the new line
+            ? BasketLine(stock: stock, fraction: fraction, quantity: quantity, priceOverride: _pendingPrices.remove(key))
             : existing.copyWith(stock: stock, quantity: existing.quantity + quantity);
     notifyListeners();
     return BasketResult.ok;
@@ -109,10 +146,15 @@ class BasketProvider with ChangeNotifier {
     return BasketResult.ok;
   }
 
+  /// Sets the price per unit for this sale. Setting it back to the catalogue price clears the
+  /// override, so the sale isn't reported as a changed price.
   void setPrice(BasketLine line, double price) {
     final current = _lines[line.key];
     if (current == null) return;
-    _lines[line.key] = current.copyWith(priceOverride: price);
+    _lines[line.key] =
+        (price - current.fraction.sellingPrice).abs() < 0.005
+            ? BasketLine(stock: current.stock, fraction: current.fraction, quantity: current.quantity)
+            : current.copyWith(priceOverride: price);
     notifyListeners();
   }
 
@@ -121,8 +163,9 @@ class BasketProvider with ChangeNotifier {
   }
 
   void clear() {
-    if (_lines.isEmpty) return;
+    if (_lines.isEmpty && _pendingPrices.isEmpty) return;
     _lines.clear();
+    _pendingPrices.clear();
     notifyListeners();
   }
 

@@ -123,12 +123,15 @@ class _FilteredSalesHistoryScreenState extends State<FilteredSalesHistoryScreen>
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final dateFormat = DateFormat('MMM dd, yyyy HH:mm');
-    final endInclusive = DateTime(widget.end.year, widget.end.month, widget.end.day, 23, 59, 59);
+    // A bare date (midnight) means "through the end of that day"; an exact time is used as is
+    final e = widget.end;
+    final endInclusive = e == DateTime(e.year, e.month, e.day) ? DateTime(e.year, e.month, e.day, 23, 59, 59, 999) : e;
+    final rangeFormat = DateFormat('MMM d, HH:mm');
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '${l10n.sales} (${DateFormat('yyyy-MM-dd').format(widget.start)} - ${DateFormat('yyyy-MM-dd').format(widget.end)})',
+          '${l10n.sales} (${rangeFormat.format(widget.start)} – ${rangeFormat.format(endInclusive)})',
         ),
         actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _isLoading ? null : _loadSales)],
       ),

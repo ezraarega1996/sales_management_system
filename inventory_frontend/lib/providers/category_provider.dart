@@ -101,4 +101,13 @@ class CategoryProvider with ChangeNotifier {
       return false;
     }
   }
+
+  /// Forgets everything loaded for the signed-in user (called on logout), so the next person
+  /// using this phone never sees it.
+  void reset() {
+    _categories = [];
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
+  }
 }

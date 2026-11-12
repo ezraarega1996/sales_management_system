@@ -7,7 +7,7 @@ import {
   updateSubscription,
   getBusinessStats,
 } from "../controllers/businessController.js"
-import { authenticate, authorizeAdmin } from "../middleware/auth.js"
+import { authenticate, authorizeAdmin, authorizeOwner } from "../middleware/auth.js"
 
 const router = express.Router()
 
@@ -19,7 +19,7 @@ router.get("/", authenticate, authorizeAdmin, getAllBusinesses)
 router.get("/:id", authenticate, getBusinessById)
 router.put("/:id", authenticate, updateBusiness)
 router.put("/:id/subscription", authenticate, authorizeAdmin, updateSubscription)
-router.get("/:id/stats", authenticate, getBusinessStats)
+router.get("/:id/stats", authenticate, authorizeOwner, getBusinessStats)
 
 
 export default router

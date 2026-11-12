@@ -1,4 +1,12 @@
-import { ItemBought, Item, Fraction, AvailableItem, Shop, sequelize } from "../models/index.js"
+import { ItemBought, Item, Fraction, Shop, StockLot, sequelize } from "../models/index.js"
+import {
+  lockStock,
+  addLot,
+  recostLot,
+  removeUnitsNewestFirst,
+  httpError,
+  num,
+} from "../services/stockLedger.js"
 
 const FRACTION_ATTRS = ["id", "name", "ratio", "sellingPrice", "purchasePrice", "isUnit", "itemId"]
 const boughtIncludes = () => [
@@ -6,10 +14,16 @@ const boughtIncludes = () => [
   { model: Shop, attributes: ["id", "name", "address"] },
 ]
 
+/** Salesmen only see their own shop's purchases; owners see the business. */
+const boughtScope = (req) =>
+  req.user.role === "salesman"
+    ? { businessId: req.user.businessId, shopId: req.user.shopId ?? null }
+    : { businessId: req.user.businessId }
+
 export const getAllBoughts = async (req, res) => {
   try {
     const boughts = await ItemBought.findAll({
-      where: { businessId: req.user.businessId },
+      where: boughtScope(req),
       include: boughtIncludes(),
       order: [["createdTime", "DESC"]],
     })
@@ -23,7 +37,7 @@ export const getAllBoughts = async (req, res) => {
 export const getBoughtById = async (req, res) => {
   try {
     const bought = await ItemBought.findOne({
-      where: { id: req.params.id, businessId: req.user.businessId },
+      where: { id: req.params.id, ...boughtScope(req) },
       include: boughtIncludes(),
     })
     if (!bought) {
@@ -35,158 +49,258 @@ export const getBoughtById = async (req, res) => {
   }
 }
 
-/** Adds `quantityInUnits` to the shop's stock row for the item, creating it if needed. */
-const addToStock = async ({ itemId, businessId, shopId, quantityInUnits, soldPrice }, transaction) => {
-  const existing = await AvailableItem.findOne({ where: { itemId, businessId, shopId }, transaction })
-  if (existing) {
-    existing.quantity = quantityInUnits + parseFloat(existing.quantity)
-    existing.soldPrice = soldPrice
-    return existing.save({ transaction })
+
+const EPS = 1e-6
+
+/** Validates the numbers of a purchase body; returns an error message or null. */
+const invalidNumbers = ({ quantity, fractionPurchasePrice, fractionSoldPrice }, { partial = false } = {}) => {
+  const bad = (v, check) => {
+    if (partial && v === undefined) return false
+    const n = parseFloat(v)
+    return isNaN(n) || !check(n)
   }
-  return AvailableItem.create({ itemId, businessId, shopId, quantity: quantityInUnits, soldPrice }, { transaction })
+  if (bad(quantity, (q) => q > 0)) return "Quantity must be more than 0"
+  if (bad(fractionPurchasePrice, (p) => p >= 0)) return "Purchase price must be 0 or more"
+  if (bad(fractionSoldPrice, (p) => p >= 0)) return "Selling price must be 0 or more"
+  return null
 }
 
-/** Removes a purchase's quantity from its stock row (deleting the row when it reaches 0). */
-const removeFromStock = async (bought, ratio, transaction) => {
-  if (!bought.availableItemId) return
-  const availableItem = await AvailableItem.findByPk(bought.availableItemId, { transaction })
-  if (!availableItem) return
-  availableItem.quantity = parseFloat(availableItem.quantity) - bought.quantity * ratio
-  if (availableItem.quantity <= 0) {
-    await availableItem.destroy({ transaction })
-  } else {
-    await availableItem.save({ transaction })
-  }
+/** Sends an error from a transaction callback as an HTTP response. */
+const sendError = (res, error, what) => {
+  if (error.status) return res.status(error.status).json({ message: error.message })
+  console.error(`Error ${what}:`, error.message)
+  res.status(500).json({ message: `Error ${what}`, error: error.message })
 }
 
+/** Finds a unit of an item that belongs to this business. */
+const findFraction = (fractionId, itemId, businessId, transaction) =>
+  Fraction.findOne({
+    where: { id: fractionId, itemId },
+    include: [{ model: Item, attributes: ["id"], where: { businessId } }],
+    transaction,
+  })
+
+const SOLD_ALREADY = "Some of this purchase is already sold"
+
+/**
+ * Records a purchase: adds the units to the shop's stock and creates a stock lot at this
+ * purchase's cost, which sales will use up first-in, first-out.
+ */
 export const createBought = async (req, res) => {
-  const { itemId, fractionId, fractionPurchasePrice, fractionSoldPrice, quantity, expiryDate, shopId } = req.body
+  const { itemId, fractionId, fractionPurchasePrice, fractionSoldPrice, quantity, expiryDate, shopId, clientId } = req.body
   const businessId = req.user.businessId
-  const transaction = await sequelize.transaction()
+  const invalid = !itemId || !fractionId || !shopId ? "itemId, fractionId and shopId are required" : invalidNumbers(req.body)
+  if (invalid) return res.status(400).json({ message: invalid })
+
   try {
-    const [item, shop, fraction] = await Promise.all([
-      Item.findOne({ where: { id: itemId, businessId }, transaction }),
-      Shop.findOne({ where: { id: shopId, businessId }, transaction }),
-      Fraction.findOne({ where: { id: fractionId }, transaction }),
-    ])
-    if (!item || !shop || !fraction) {
-      await transaction.rollback()
-      const missing = !item ? "Item" : !shop ? "Shop" : "Fraction"
-      return res.status(404).json({ message: `${missing} not found` })
-    }
+    let repeated = false
+    const boughtId = await sequelize.transaction(async (transaction) => {
+      // The same save sent again (e.g. the phone timed out and retried): return the first one
+      if (clientId) {
+        await sequelize.query("SELECT pg_advisory_xact_lock(hashtext(:key))", {
+          replacements: { key: `bought:${businessId}:${clientId}` },
+          transaction,
+        })
+        const existing = await ItemBought.findOne({ where: { businessId, clientId: String(clientId) }, transaction })
+        if (existing) {
+          repeated = true
+          return existing.id
+        }
+      }
 
-    const availableItem = await addToStock(
-      { itemId, businessId, shopId, quantityInUnits: quantity * fraction.ratio, soldPrice: fractionSoldPrice },
-      transaction,
-    )
+      const [shop, fraction] = await Promise.all([
+        Shop.findOne({ where: { id: shopId, businessId }, transaction }),
+        findFraction(fractionId, itemId, businessId, transaction),
+      ])
+      if (!shop) throw httpError(404, "Shop not found")
+      if (!fraction) throw httpError(404, "Item or unit not found")
 
-    const bought = await ItemBought.create(
-      {
-        itemId,
-        fractionId,
-        fractionPurchasePrice,
-        fractionSoldPrice,
-        quantity,
-        expiryDate: expiryDate || null,
-        businessId,
-        shopId,
-        available_items_count: availableItem.quantity / fraction.ratio,
-        availableItemId: availableItem.id,
-      },
-      { transaction },
-    )
+      const ratio = num(fraction.ratio) || 1
+      const units = num(quantity) * ratio
+      const stock = await lockStock({ businessId, shopId, itemId, createIfMissing: true, soldPrice: fractionSoldPrice }, transaction)
+      stock.quantity = num(stock.quantity) + units
+      stock.soldPrice = fractionSoldPrice
+      await stock.save({ transaction })
 
-    await transaction.commit()
-    res.status(201).json(await ItemBought.findByPk(bought.id, { include: boughtIncludes() }))
+      const bought = await ItemBought.create(
+        {
+          itemId,
+          fractionId,
+          fractionPurchasePrice,
+          fractionSoldPrice,
+          quantity,
+          expiryDate: expiryDate || null,
+          businessId,
+          shopId,
+          available_items_count: num(stock.quantity) / ratio,
+          availableItemId: stock.id,
+          clientId: clientId ? String(clientId) : null,
+        },
+        { transaction },
+      )
+      await addLot(
+        {
+          businessId,
+          shopId,
+          itemId,
+          itemBoughtId: bought.id,
+          units,
+          unitCost: num(fractionPurchasePrice) / ratio,
+          receivedAt: bought.createdTime,
+        },
+        transaction,
+      )
+      return bought.id
+    })
+    res.status(repeated ? 200 : 201).json(await ItemBought.findByPk(boughtId, { include: boughtIncludes() }))
   } catch (error) {
-    await transaction.rollback()
-    console.error("Error creating bought item:", error.message)
-    res.status(500).json({ message: "Error creating bought item", error: error.message })
+    sendError(res, error, "creating bought item")
   }
 }
 
+/**
+ * Edits a purchase. Stock changes only by the difference, never below what has already been
+ * sold from this purchase. A corrected price also re-costs the sales that used this purchase.
+ */
 export const updateBought = async (req, res) => {
   const { fractionId, fractionPurchasePrice, fractionSoldPrice, quantity, expiryDate, shopId } = req.body
   const businessId = req.user.businessId
-  const transaction = await sequelize.transaction()
+  const invalid = invalidNumbers(req.body, { partial: true })
+  if (invalid) return res.status(400).json({ message: invalid })
+
   try {
-    const bought = await ItemBought.findOne({ where: { id: req.params.id, businessId }, transaction })
-    if (!bought) {
-      await transaction.rollback()
-      return res.status(404).json({ message: "Bought item not found" })
-    }
+    const boughtId = await sequelize.transaction(async (transaction) => {
+      const bought = await ItemBought.findOne({ where: { id: req.params.id, businessId }, transaction })
+      if (!bought) throw httpError(404, "Bought item not found")
 
-    if (shopId) {
-      const shop = await Shop.findOne({ where: { id: shopId, businessId }, transaction })
-      if (!shop) {
-        await transaction.rollback()
-        return res.status(404).json({ message: "Shop not found" })
+      const newShopId = shopId || bought.shopId
+      if (newShopId !== bought.shopId && !(await Shop.findOne({ where: { id: newShopId, businessId }, transaction }))) {
+        throw httpError(404, "Shop not found")
       }
-    }
+      const [oldFraction, newFraction] = await Promise.all([
+        Fraction.findByPk(bought.fractionId, { transaction }),
+        findFraction(fractionId || bought.fractionId, bought.itemId, businessId, transaction),
+      ])
+      if (!newFraction) throw httpError(404, "Item or unit not found")
 
-    const [oldFraction, newFraction] = await Promise.all([
-      Fraction.findByPk(bought.fractionId, { transaction }),
-      Fraction.findByPk(fractionId || bought.fractionId, { transaction }),
-    ])
-    if (!newFraction) {
-      await transaction.rollback()
-      return res.status(404).json({ message: "Fraction not found" })
-    }
+      const oldRatio = num(oldFraction?.ratio) || 1
+      const newRatio = num(newFraction.ratio) || 1
+      const newQuantity = quantity !== undefined ? num(quantity) : num(bought.quantity)
+      const newPurchasePrice =
+        fractionPurchasePrice !== undefined ? num(fractionPurchasePrice) : num(bought.fractionPurchasePrice)
+      const newSoldPrice = fractionSoldPrice !== undefined ? num(fractionSoldPrice) : num(bought.fractionSoldPrice)
+      const oldUnits = num(bought.quantity) * oldRatio
+      const newUnits = newQuantity * newRatio
+      const newUnitCost = newPurchasePrice / newRatio
+      const itemKey = { businessId, itemId: bought.itemId }
 
-    // Take the old purchase out of stock (using the fraction it was recorded with), then add the new one
-    await removeFromStock(bought, oldFraction?.ratio ?? newFraction.ratio, transaction)
+      const lot = await StockLot.findOne({ where: { itemBoughtId: bought.id }, lock: transaction.LOCK.UPDATE, transaction })
+      const consumed = lot ? num(lot.initialUnits) - num(lot.remainingUnits) : 0
 
-    const newShopId = shopId || bought.shopId
-    const newQuantity = quantity || bought.quantity
-    const newSoldPrice = fractionSoldPrice || bought.fractionSoldPrice
-    const availableItem = await addToStock(
-      { itemId: bought.itemId, businessId, shopId: newShopId, quantityInUnits: newQuantity * newFraction.ratio, soldPrice: newSoldPrice },
-      transaction,
-    )
+      let stock
+      if (newShopId !== bought.shopId) {
+        // Moving a purchase to another shop: only while none of it has been sold
+        const movedOut = lot ? num(lot.remainingUnits) : oldUnits
+        const oldStock = await lockStock({ ...itemKey, shopId: bought.shopId }, transaction)
+        if (consumed > EPS || !oldStock || num(oldStock.quantity) < movedOut - EPS) {
+          throw httpError(400, `${SOLD_ALREADY}, so its shop can't be changed`)
+        }
+        oldStock.quantity = num(oldStock.quantity) - movedOut
+        await oldStock.save({ transaction })
+        if (lot) await lot.destroy({ transaction })
+        else await removeUnitsNewestFirst({ ...itemKey, shopId: bought.shopId, units: movedOut }, transaction)
 
-    await bought.update(
-      {
-        fractionId: newFraction.id,
-        fractionPurchasePrice: fractionPurchasePrice || bought.fractionPurchasePrice,
-        fractionSoldPrice: newSoldPrice,
-        quantity: newQuantity,
-        expiryDate: expiryDate || bought.expiryDate,
-        shopId: newShopId,
-        available_items_count: availableItem.quantity / newFraction.ratio,
-        availableItemId: availableItem.id,
-      },
-      { transaction },
-    )
+        stock = await lockStock({ ...itemKey, shopId: newShopId, createIfMissing: true, soldPrice: newSoldPrice }, transaction)
+        stock.quantity = num(stock.quantity) + newUnits
+        await addLot(
+          {
+            ...itemKey,
+            shopId: newShopId,
+            itemBoughtId: bought.id,
+            units: newUnits,
+            unitCost: newUnitCost,
+            receivedAt: bought.createdTime,
+          },
+          transaction,
+        )
+      } else {
+        stock = await lockStock({ ...itemKey, shopId: bought.shopId, createIfMissing: true, soldPrice: newSoldPrice }, transaction)
+        const delta = newUnits - oldUnits
+        if (lot) {
+          if (newUnits < consumed - EPS) throw httpError(400, `${SOLD_ALREADY}: the quantity can't go below that`)
+          lot.initialUnits = newUnits
+          lot.remainingUnits = newUnits - consumed
+          await lot.save({ transaction })
+          if (Math.abs(newUnitCost - num(lot.unitCost)) > 1e-9) await recostLot(lot, newUnitCost, transaction)
+        } else if (delta > EPS) {
+          // Purchase recorded before cost tracking: the extra units become a new lot at its price
+          await addLot(
+            { ...itemKey, shopId: bought.shopId, units: delta, unitCost: newUnitCost, receivedAt: bought.createdTime },
+            transaction,
+          )
+        } else if (delta < -EPS) {
+          if (num(stock.quantity) < -delta - EPS) throw httpError(400, `${SOLD_ALREADY}: the quantity can't go below that`)
+          await removeUnitsNewestFirst({ ...itemKey, shopId: bought.shopId, units: -delta }, transaction)
+        }
+        stock.quantity = num(stock.quantity) + delta
+      }
+      stock.soldPrice = newSoldPrice
+      await stock.save({ transaction })
 
-    await transaction.commit()
-    res.json(await ItemBought.findByPk(bought.id, { include: boughtIncludes() }))
+      await bought.update(
+        {
+          fractionId: newFraction.id,
+          fractionPurchasePrice: newPurchasePrice,
+          fractionSoldPrice: newSoldPrice,
+          quantity: newQuantity,
+          expiryDate: expiryDate || bought.expiryDate,
+          shopId: newShopId,
+          available_items_count: num(stock.quantity) / newRatio,
+          availableItemId: stock.id,
+        },
+        { transaction },
+      )
+      return bought.id
+    })
+    res.json(await ItemBought.findByPk(boughtId, { include: boughtIncludes() }))
   } catch (error) {
-    await transaction.rollback()
-    console.error("Error updating bought item:", error.message)
-    res.status(500).json({ message: "Error updating bought item", error: error.message })
+    sendError(res, error, "updating bought item")
   }
 }
 
+/** Deletes a purchase and takes its units out of stock, only if none of it has been sold. */
 export const deleteBought = async (req, res) => {
-  const transaction = await sequelize.transaction()
+  const businessId = req.user.businessId
   try {
-    const bought = await ItemBought.findOne({
-      where: { id: req.params.id, businessId: req.user.businessId },
-      transaction,
+    await sequelize.transaction(async (transaction) => {
+      const bought = await ItemBought.findOne({ where: { id: req.params.id, businessId }, transaction })
+      if (!bought) throw httpError(404, "Bought item not found")
+
+      const fraction = await Fraction.findByPk(bought.fractionId, { transaction })
+      const units = num(bought.quantity) * (num(fraction?.ratio) || 1)
+      const key = { businessId, shopId: bought.shopId, itemId: bought.itemId }
+      const stock = await lockStock(key, transaction)
+      const lot = await StockLot.findOne({ where: { itemBoughtId: bought.id }, lock: transaction.LOCK.UPDATE, transaction })
+
+      const soldMessage = `${SOLD_ALREADY}, so it can't be deleted. Reduce the quantity instead.`
+      let removed = units
+      if (lot) {
+        if (num(lot.initialUnits) - num(lot.remainingUnits) > EPS) throw httpError(400, soldMessage)
+        removed = num(lot.remainingUnits)
+        await lot.destroy({ transaction })
+      } else {
+        // Recorded before cost tracking: the stock must still hold all of it
+        if (!stock || num(stock.quantity) < units - EPS) throw httpError(400, soldMessage)
+        await removeUnitsNewestFirst({ ...key, units }, transaction)
+      }
+      if (stock) {
+        stock.quantity = Math.max(0, num(stock.quantity) - removed)
+        await stock.save({ transaction })
+      }
+      await bought.destroy({ transaction })
     })
-    if (!bought) {
-      await transaction.rollback()
-      return res.status(404).json({ message: "Bought item not found" })
-    }
-
-    const fraction = await Fraction.findByPk(bought.fractionId, { transaction })
-    if (fraction) await removeFromStock(bought, fraction.ratio, transaction)
-
-    await bought.destroy({ transaction })
-    await transaction.commit()
     res.json({ message: "Bought item deleted successfully" })
   } catch (error) {
-    await transaction.rollback()
-    res.status(500).json({ message: "Error deleting bought item", error: error.message })
+    sendError(res, error, "deleting bought item")
   }
 }

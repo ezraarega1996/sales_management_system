@@ -28,7 +28,17 @@ class AvailableItemProvider with ChangeNotifier {
   String? _error;
 
   /// Stock to show: server quantity minus sales recorded on this phone that are still syncing.
-  List<AvailableItem> get availableItems => _serverItems.map(_withPendingSales).toList();
+  /// Built once and reused until something changes (every change goes through notifyListeners),
+  /// so reading it inside list builders doesn't redo the work for every row.
+  List<AvailableItem> get availableItems =>
+      _view ??= List.unmodifiable(_serverItems.map(_withPendingSales));
+  List<AvailableItem>? _view;
+
+  @override
+  void notifyListeners() {
+    _view = null;
+    super.notifyListeners();
+  }
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -134,5 +144,18 @@ class AvailableItemProvider with ChangeNotifier {
     _syncedSub.cancel();
     _refreshDebounce?.cancel();
     super.dispose();
+  }
+
+  /// Forgets everything loaded for the signed-in user (called on logout), so the next person
+  /// using this phone never sees it.
+  void reset() {
+    _refreshDebounce?.cancel();
+    _serverItems = [];
+    _endpoint = null;
+    _fetchedAt = null;
+    _fromCache = false;
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
   }
 }

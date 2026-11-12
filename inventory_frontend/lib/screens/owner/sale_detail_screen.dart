@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:inventory_frontend/models/sold_item.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class SaleDetailScreen extends StatelessWidget {
   final SoldItem sale;
@@ -13,7 +14,10 @@ class SaleDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('MMM dd, yyyy HH:mm');
-    
+    final l10n = AppLocalizations.of(context)!;
+    final moneyFormat = NumberFormat('#,##0.00');
+    String money(double v) => '${l10n.currencySymbol} ${moneyFormat.format(v)}';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sale Details'),
@@ -80,7 +84,13 @@ class SaleDetailScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildInfoRow('Amount', '\$${sale.soldPrice}'),
+                    _buildInfoRow(l10n.amountLabel, money(sale.soldPrice)),
+                    if (sale.priceChanged) _buildInfoRow(l10n.saleNormalPriceLabel, money(sale.expectedAmount!)),
+                    // Cost of the goods sold (FIFO: what these exact units were bought for)
+                    if (sale.profit != null) ...[
+                      _buildInfoRow(l10n.saleCostOfGoods, money(sale.soldPrice - sale.profit!)),
+                      _buildInfoRow(l10n.profit, money(sale.profit!)),
+                    ],
                   ],
                 ),
               ),
